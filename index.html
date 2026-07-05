@@ -145,6 +145,12 @@
                transition: transform .15s, box-shadow .15s, border-color .15s; }
   .pillrow a:hover { transform: translateY(-1px); box-shadow: var(--shadow-hover); border-color: var(--border-2); }
 
+  .quickfilters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .quickfilters a { padding: 7px 14px; border-radius: 999px; background: var(--bg-3);
+                     color: var(--ink-2); text-decoration: none; font-size: 13px; font-weight: 500;
+                     transition: background .15s, color .15s; }
+  .quickfilters a:hover { background: var(--ink); color: var(--bg); }
+
   .card { background: var(--bg); border: 1px solid var(--border); border-radius: 16px;
           padding: 18px 20px; margin: 14px 0; max-width: 780px; box-shadow: var(--shadow);
           transition: box-shadow .18s, border-color .18s; }
@@ -362,14 +368,36 @@ function tableHTML() {
     <th data-k="terms" class="num">Terms${arr('terms')}</th><th data-k="age" class="num">Age${arr('age')}</th>
   </tr></thead><tbody id="gtbody"></tbody></table></div></div>`;
 }
+function _cascadeOptions(select, options, allLabel) {
+  if (!select) return;
+  const cur = select.value;
+  select.innerHTML = `<option value="">${allLabel}</option>` +
+    options.map(o => `<option${o === cur ? ' selected' : ''}>${esc(o)}</option>`).join('');
+  if (cur && !options.includes(cur)) select.value = '';
+}
 function wireTable(getRows) {
   const rerender = () => {
-    let out = getRows();
-    const fs = $('fstate')?.value, fp = $('fparty')?.value, fc = $('fcases')?.checked, fr = $('frole')?.value;
-    if (fs) out = out.filter(r => r.state === fs);
-    if (fp) out = out.filter(r => r.party === fp);
-    if (fc) out = out.filter(r => (r.cases || 0) > 0);
-    if (fr) out = out.filter(r => r.role === fr);
+    const all = getRows();
+    // Live-reads (not consts) — cascading below may reset an option's
+    // value out from under a stale selection, and the final row filter
+    // must see that reset, not the value the user had picked before.
+    const fc = $('fcases')?.checked;
+    const cur = () => ({ fs: $('fstate')?.value, fp: $('fparty')?.value, fr: $('frole')?.value });
+
+    // Cascade: each select's OWN option list reflects the OTHER active
+    // filters, so picking a state immediately narrows "party" to parties
+    // that actually exist there (and vice versa) instead of showing
+    // choices that would zero out the table.
+    const without = (skip) => { const { fs, fp, fr } = cur(); return all.filter(r =>
+      (skip === 'state' || !fs || r.state === fs) &&
+      (skip === 'party' || !fp || r.party === fp) &&
+      (skip === 'role'  || !fr || r.role === fr) &&
+      (!fc || (r.cases || 0) > 0)); };
+    _cascadeOptions($('fstate'), [...new Set(without('state').map(r => r.state).filter(Boolean))].sort(), 'All states');
+    _cascadeOptions($('fparty'), [...new Set(without('party').map(r => r.party).filter(Boolean))].sort(), 'All parties');
+    _cascadeOptions($('frole'),  [...new Set(without('role').map(r => r.role).filter(Boolean))].sort(),  'MPs + MLAs');
+
+    let out = without(null);
     out.sort((a, b) => {
       const va = a[sortKey], vb = b[sortKey];
       const c = (va == null) - (vb == null) || (typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb)));
@@ -463,7 +491,14 @@ function showHome() {
   const pct = n => Math.round(100 * n / (t.analyzed || 1)) + '%';
   const list = (rows, fmt) => rows.map(r =>
     `<a href="#/node/${encodeURIComponent(r.id)}"><i class="dot" style="background:${TYPE_COLOR('person')}"></i>${esc(r.name)}<span class="chip" style="margin-left:2px">${fmt(r)}</span></a>`).join('');
+  const quickFilters = [
+    ['#/geo', 'By state'], ['#/browse/all', 'All MPs'], ['#/browse/cases', 'Has criminal cases'],
+    ['#/browse/crorepati', 'Crorepati'], ['#/browse/women', 'Women MPs'],
+    ['#/browse/first-term', 'First-term'], ['#/browse/veterans', 'Veterans (3+ terms)'],
+  ];
   setView(`
+    <div class="quickfilters">${quickFilters.map(([href, label]) =>
+      `<a href="${href}">${esc(label)}</a>`).join('')}</div>
     <div class="note"><b>Every MP, MLA, party, seat and election result since 2009</b> as one
       connected, source-linked graph — careers, affidavits, and results across four Lok Sabha
       terms and two Uttar Pradesh assembly terms. Search on the left, click any card — everything opens.
