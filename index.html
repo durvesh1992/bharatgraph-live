@@ -1093,38 +1093,92 @@ function electionCard(title, winner, runner) {
   </div>`;
 }
 
-function personBlocks(node) {
+// ---- F2: unified career timeline (term + won + lost, one sorted list) ----
+const TERM_YEAR = {
+  'body:15th-lok-sabha': 2009, 'body:16th-lok-sabha': 2014, 'body:17th-lok-sabha': 2019, 'body:18th-lok-sabha': 2024,
+  'body:17th-uttar-pradesh-assembly': 2017, 'body:18th-uttar-pradesh-assembly': 2022,
+};
+function personTimeline(node) {
   const rels = nbs(node.id);
-  let html = '';
-  const won = rels.filter(x => x.rel === 'WON' && x.dir === 'out')
-    .sort((a, b) => b.node.name.localeCompare(a.node.name));
-  for (const w of won) {
-    const p = w.props, electionName = w.node.name || 'Election';
-    if (p.votes != null) {
-      html += electionCard(`${electionName} — won ${p.constituency} (${p.state || ''})`,
-        { name: node.name, party: currentParty(node.id)?.name, votes: p.votes, share: p.vote_share,
-          margin: p.margin, margin_pct: p.margin_pct, turnout: p.turnout, id: null },
-        p.runner_up ? { name: p.runner_up, party: p.runner_up_party, votes: (p.votes || 0) - (p.margin || 0), share: null } : null);
-    } else {
-      html += `<div class="card"><h4>${esc(electionName)}</h4><div class="sub">Won ${esc(p.constituency || '')}</div></div>`;
+  const wonByYear = new Map();
+  for (const x of rels.filter(r => r.rel === 'WON' && r.dir === 'out')) {
+    const year = TERM_YEAR[x.node.id] || parseInt((x.node.name.match(/\d{4}/) || [])[0]);
+    if (year) wonByYear.set(year, x.props);
+  }
+  const rows = [];
+  for (const x of rels.filter(r => r.rel === 'MEMBER_OF' && r.dir === 'out' && r.node.type === 'body')) {
+    const bodyId = x.node.id, isRS = bodyId === 'body:rajya-sabha', isCurrent = CURRENT_BODIES.includes(bodyId);
+    const year = isRS ? (parseInt((x.props.term || '').split('-')[0]) || null) : TERM_YEAR[bodyId];
+    const party = isCurrent ? currentParty(node.id)?.name : x.props.party;
+    const constituency = isRS ? null : (isCurrent ? constituencyOf(node.id)?.name : x.props.constituency);
+    const state = isRS ? x.props.term : (isCurrent ? constituencyOf(node.id)?.props?.state : x.props.state);
+    const won = year ? wonByYear.get(year) : null;
+    rows.push({ kind: 'term', year, bodyId, label: x.node.name, party, constituency, state,
+                margin: won?.margin, marginPct: won?.margin_pct });
+  }
+  for (const x of rels.filter(r => r.rel === 'LOST' && r.dir === 'out')) {
+    const year = parseInt((x.node.name.match(/\d{4}/) || [])[0]) || null;
+    rows.push({ kind: 'lost', year, label: x.node.name, party: x.props.party, constituency: x.props.constituency,
+                state: x.props.state, lostTo: x.props.lost_to, margin: x.props.margin, votes: x.props.votes, share: x.props.vote_share });
+  }
+  rows.sort((a, b) => (b.year || 0) - (a.year || 0));
+  return rows;
+}
+
+function personBlocks(node) {
+  const timeline = personTimeline(node);
+  if (!timeline.length) return '';
+  const rows = timeline.map(r => {
+    if (r.kind === 'lost') {
+      return `<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:13.5px">
+        <span class="chip" style="background:var(--bg-3);margin-right:6px">LOST</span>
+        <b>${esc(r.year || '')}</b> · ${esc(r.constituency || '')}${r.state ? ` (${esc(r.state)})` : ''}
+        <span class="chip">${esc(r.party || '')}</span>
+        <span style="color:var(--muted)"> — ${r.votes != null ? num(r.votes) + ' votes' : ''}${r.share != null ? ` (${r.share}%)` : ''}, lost to ${esc(r.lostTo || 'the winner')}${r.margin != null ? ` by ${num(r.margin)}` : ''}</span>
+      </div>`;
+    }
+    return `<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:13.5px">
+      <b>${esc(r.year || '')}</b> · <a href="#/node/${encodeURIComponent(r.bodyId)}" style="color:var(--ink);font-weight:600;text-decoration:none">${esc(r.label)}</a>
+      ${r.party ? `<span class="chip" style="margin-left:4px">${esc(r.party)}</span>` : ''}
+      ${r.constituency ? ` · ${esc(r.constituency)}${r.state ? ` (${esc(r.state)})` : ''}` : (r.state ? ` · ${esc(r.state)}` : '')}
+      ${r.margin != null ? `<span style="color:var(--muted)"> — won by ${num(r.margin)}${r.marginPct != null ? ` (${r.marginPct}pp)` : ''}</span>` : ''}
+    </div>`;
+  }).join('');
+  return `<div class="eyebrow">Career timeline</div><div class="tablecard" style="padding:4px 20px">${rows}</div>`;
+}
+
+// ---- F2: cases trajectory (only when >=2 affidavit vintages exist) ----
+function casesTrajectory(node) {
+  const points = [
+    node.props.affidavit_2014 && { year: '2014', n: node.props.affidavit_2014.criminal_cases },
+    node.props.affidavit_2019 && { year: '2019', n: node.props.affidavit_2019.criminal_cases },
+    node.props.affidavit && { year: '2024', n: node.props.affidavit.criminal_cases },
+  ].filter(Boolean);
+  if (points.length < 2) return '';
+  return `<div class="sub" style="margin-top:8px"><b>Criminal cases declared:</b> ${points.map(p => `${p.year}: ${p.n}`).join(' → ')}</div>`;
+}
+
+// ---- F2: network (colleagues, ballot history, predecessor/successor) ----
+function personNetwork(node) {
+  const pn = currentParty(node.id), cn = constituencyOf(node.id);
+  const blocks = [];
+  if (pn && cn?.props?.state) {
+    const colleagues = sittingMPs().filter(p => p.id !== node.id && currentParty(p.id)?.id === pn.id
+      && constituencyOf(p.id)?.props?.state === cn.props.state).slice(0, 12);
+    if (colleagues.length) blocks.push(['Party colleagues from ' + cn.props.state, colleagues.map(p =>
+      `<a href="#/node/${encodeURIComponent(p.id)}"><i class="dot" style="background:${TYPE_COLOR('person')}"></i>${esc(p.name)}</a>`)]);
+  }
+  if (cn) {
+    const history = seatHistory(cn).filter(r => r.personId && r.personId !== node.id);
+    if (history.length) {
+      const seen = new Set(); const others = [];
+      for (const r of history) { if (!seen.has(r.personId)) { seen.add(r.personId); others.push(r); } }
+      blocks.push(['Others who held ' + cn.name, others.slice(0, 8).map(r =>
+        `<a href="#/node/${encodeURIComponent(r.personId)}"><i class="dot" style="background:${TYPE_COLOR('person')}"></i>${esc(r.personName)}<span class="chip">${esc(r.year || '')}</span></a>`)]);
     }
   }
-  const lost = rels.filter(x => x.rel === 'LOST' && x.dir === 'out')
-    .sort((a, b) => b.node.name.localeCompare(a.node.name));
-  for (const l of lost) {
-    const p = l.props, electionName = l.node.name || 'Election';
-    html += `<div class="card"><h4>${esc(electionName)} — contested ${esc(p.constituency)} (${esc(p.state || '')})</h4>
-      <div class="sub">Runner-up for ${esc(p.party || '')} with <b>${num(p.votes)}</b> votes (${p.vote_share ?? '—'}%) —
-      lost to ${esc(p.lost_to || 'the winner')} by ${num(p.margin)}.</div></div>`;
-  }
-  const terms = rels.filter(x => x.rel === 'MEMBER_OF' && x.dir === 'out' && x.node.type === 'body');
-  if (terms.length) {
-    html += `<div class="card"><h4>Career — Lok Sabha terms</h4>` + terms
-      .sort((a, b) => b.node.name.localeCompare(a.node.name))
-      .map(tm => `<div class="sub">• <a href="#/node/${encodeURIComponent(tm.node.id)}" style="color:var(--ink);font-weight:600;text-decoration:none">${esc(tm.node.name)}</a>
-        ${tm.props.party ? ` — ${esc(tm.props.party)}, ${esc(tm.props.constituency || '')} (${esc(tm.props.state || '')})` : ''}</div>`).join('') + `</div>`;
-  }
-  return html;
+  if (!blocks.length) return '';
+  return blocks.map(([label, links]) => `<div class="eyebrow">${esc(label)}</div><div class="pillrow">${links.join('')}</div>`).join('');
 }
 
 function showDetail(node) {
@@ -1222,16 +1276,31 @@ function showDetail(node) {
       assets ${crore(aff14.assets_inr)} · liabilities ${crore(aff14.liabilities_inr)}
       ${wg && wg.multiple_since_2014 ? ` · <b>wealth ${wg.multiple_since_2014}× in 10 years</b>` : ''}
       <span class="chip">· <a href="${esc(aff14.source)}" target="_blank" rel="noopener">source: ADR/MyNeta</a></span></div>`;
+  // F2: identity-header role line ("MP, Varanasi, Uttar Pradesh -- 3rd term") +
+  // a war-room shortcut to their seat, for person pages specifically.
+  let roleLine = '';
+  if (node.type === 'person') {
+    const pn = currentParty(node.id), cn = constituencyOf(node.id);
+    const isMLA = cn?.props?.kind === 'assembly';
+    const termOrd = san?.no_of_terms ? `${san.no_of_terms}${['th', 'st', 'nd', 'rd'][(san.no_of_terms % 10 > 3 || Math.floor(san.no_of_terms % 100 / 10) === 1) ? 0 : san.no_of_terms % 10]} term` : '';
+    const bits = [pn && (isMLA ? 'MLA' : 'MP'), cn?.name, cn?.props?.state, termOrd].filter(Boolean);
+    if (bits.length) roleLine = `<div class="sub" style="margin-top:-4px">${esc(bits.join(', '))}</div>`;
+  }
+  const warRoomLink = node.type === 'person' && constituencyOf(node.id)
+    ? ` · <a href="#/war/${encodeURIComponent(constituencyOf(node.id).id)}" style="color:var(--accent);text-decoration:none">War room for their seat →</a>` : '';
+
   setView(`
     <h2><i class="dot" style="display:inline-block;background:${TYPE_COLOR(node.type)};width:12px;height:12px;border-radius:4px"></i>
         ${esc(node.name)}</h2>
+    ${roleLine}
     <div class="sub">${esc(node.type)} · <code style="font-size:12px">${esc(node.id)}</code>
-      ${['person', 'party', 'constituency'].includes(node.type) ? ` · <a href="#/compare/${encodeURIComponent(node.id)}" style="color:var(--accent);text-decoration:none">Compare with…</a>` : ''}</div>
+      ${['person', 'party', 'constituency'].includes(node.type) ? ` · <a href="#/compare/${encodeURIComponent(node.id)}" style="color:var(--accent);text-decoration:none">Compare with…</a>` : ''}${warRoomLink}</div>
     ${props ? `<div class="sub">${props}</div>` : ''}
-    ${sanHtml}${socialHtml}${affHtml}${aff19Html}${aff14Html}${wealthChartHtml}${docTextHtml}${newsHtml}
+    ${sanHtml}${socialHtml}${affHtml}${aff19Html}${aff14Html}${wealthChartHtml}${node.type === 'person' ? casesTrajectory(node) : ''}${docTextHtml}${newsHtml}
     <div class="prov">source: <a href="${esc(node.source)}" target="_blank" rel="noopener">${esc(node.source)}</a>
       · retrieved ${esc(node.retrieved_at)}</div>
     ${node.type === 'person' ? personBlocks(node) : ''}
+    ${node.type === 'person' ? personNetwork(node) : ''}
     ${Object.entries(groups).map(([rel, others]) => `
       <div class="eyebrow">${esc(rel)} · ${others.length}</div>
       <div class="pillrow">
