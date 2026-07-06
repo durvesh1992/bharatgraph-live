@@ -272,6 +272,7 @@
       <input id="q" type="search" placeholder="Search anything political…" autocomplete="off" aria-label="Search the graph">
     </div>
     <div class="fchips" id="fchips"></div>
+    <div id="nlanswer"></div>
     <ul id="results"></ul>
     <div class="legend" id="legend"></div>
   </div>
@@ -344,6 +345,13 @@ function init(data) {
   $('legend').innerHTML = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])
     .map(([ty, c]) => `<span><i class="dot" style="background:${TYPE_COLOR(ty)}"></i>${esc(ty)} · ${c}</span>`).join('');
   route();
+  // Rotating placeholder examples -- cheap discoverability nudge for the NL
+  // search grammar; skipped for prefers-reduced-motion by simply not rotating.
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const examples = ['Try: richest MP in UP', 'Try: who won Varanasi in 2019', 'Try: MPs with criminal cases from Bihar'];
+    let ei = 0;
+    setInterval(() => { if (!$('q').value) { ei = (ei + 1) % examples.length; $('q').placeholder = examples[ei]; } }, 3500);
+  }
 }
 
 // ---- helpers over the graph ----
@@ -360,6 +368,279 @@ function mpRow(p) {
            role: c?.props?.kind === 'assembly' ? 'MLA' : 'MP',
            cases: aff.criminal_cases ?? null, assets: aff.assets_inr ?? null,
            terms: san.no_of_terms ?? null, age: san.age ?? null, gender: san.gender || '' };
+}
+
+// ---- F5: natural-language search (deterministic grammar, no LLM) ----
+// Design: an ORDERED list of intent patterns; first match wins; unmatched
+// queries fall through to the existing substring search untouched. Every
+// answer shows "interpreted as: ..." above the result -- transparency over
+// magic, and a wrong parse is immediately visible rather than silently wrong.
+const NL_STATE_ABBR = { up: 'Uttar Pradesh', mh: 'Maharashtra', tn: 'Tamil Nadu', wb: 'West Bengal',
+  ap: 'Andhra Pradesh', ka: 'Karnataka', kl: 'Kerala', gj: 'Gujarat',
+  rj: 'Rajasthan', pb: 'Punjab', hr: 'Haryana', br: 'Bihar', jh: 'Jharkhand', od: 'Odisha',
+  ts: 'Telangana', ct: 'Chhattisgarh', uk: 'Uttarakhand',
+  hp: 'Himachal Pradesh', jk: 'Jammu and Kashmir', dl: 'Delhi' };
+// Deliberately NOT aliasing "mp" (Madhya Pradesh) -- collides constantly with
+// "MP"/"MPs" meaning Member(s) of Parliament, which appears in nearly every
+// query this product handles; a wrong match here silently mis-scopes almost
+// any question ("richest mp" was answering for Madhya Pradesh, not nationally,
+// caught via the fixture suite). Also deliberately not aliasing "or" (Odisha,
+// collides with the conjunction) or "as" (Assam, collides with the
+// preposition) -- same reasoning. Odisha/Assam still work via their full name.
+// Also deliberately NOT aliasing ambiguous abbreviations with more than one live
+// real-world referent (e.g. "ncp" -- multiple NCP factions exist as distinct
+// parties in the graph right now) -- guessing wrong here is worse than not
+// answering; the full party name still works via substring match below.
+const NL_PARTY_ABBR = { bjp: 'Bharatiya Janata Party', inc: 'Indian National Congress',
+  congress: 'Indian National Congress', sp: 'Samajwadi Party', aap: 'Aam Aadmi Party',
+  tmc: 'All India Trinamool Congress', aitc: 'All India Trinamool Congress',
+  dmk: 'Dravida Munnetra Kazhagam', aiadmk: 'All India Anna Dravida Munnetra Kazhagam',
+  bsp: 'Bahujan Samaj Party', jdu: 'Janata Dal (United)', rjd: 'Rashtriya Janata Dal',
+  ysrcp: 'Yuvajana Sramika Rythu Congress Party', tdp: 'Telugu Desam Party', bjd: 'Biju Janata Dal',
+  aimim: 'All India Majlis-e-Ittehadul Muslimeen' };
+let _nlStateNames = null, _nlPartyNames = null;
+function nlStateNames() { return _nlStateNames || (_nlStateNames = DATA.nodes.filter(n => n.type === 'state').map(n => n.name)); }
+function nlPartyNames() { return _nlPartyNames || (_nlPartyNames = DATA.nodes.filter(n => n.type === 'party').map(n => n.name)); }
+
+// Finds the LONGEST matching state/party name (full name or alias) anywhere
+// in the query text and returns {value, matchedText} or null. Longest-match
+// first so "Uttar Pradesh" doesn't get shadowed by a shorter false alias hit.
+function nlFindEntity(text, names, abbr) {
+  const candidates = [];
+  for (const full of names) if (text.includes(full.toLowerCase())) candidates.push([full, full.toLowerCase()]);
+  for (const [ab, full] of Object.entries(abbr)) {
+    if (new RegExp(`\\b${ab}\\b`).test(text)) candidates.push([full, ab]);
+  }
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => b[1].length - a[1].length);
+  return { value: candidates[0][0], matchedText: candidates[0][1] };
+}
+function nlParseAmount(text) {
+  const m = text.match(/(\d+(?:\.\d+)?)\s*(cr|crore|lakh|lac|l)\b/);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  return /^(cr|crore)/.test(m[2]) ? n * 1e7 : n * 1e5;
+}
+function nlParseAge(text) {
+  const over = text.match(/(?:over|above|>)\s*(\d{2,3})/);
+  const under = text.match(/(?:under|below|<)\s*(\d{2,3})/);
+  return { over: over ? parseInt(over[1]) : null, under: under ? parseInt(under[1]) : null };
+}
+// The shared filter predicate every filter-based intent builds on -- mirrors
+// BROWSES' predicates exactly so NL answers and the browse tables never disagree.
+function nlBuildFilter(text, stateMatch, partyMatch) {
+  const preds = [];
+  if (stateMatch) preds.push(r => r.state === stateMatch.value);
+  if (partyMatch) preds.push(r => r.party === partyMatch.value);
+  if (/\bwith criminal cases\b|\bwith cases\b|\bhas cases\b/.test(text)) preds.push(r => (r.cases || 0) > 0);
+  if (/\bwithout (?:criminal )?cases\b|\bno cases\b|\bclean\b/.test(text)) preds.push(r => (r.cases || 0) === 0);
+  if (/\bcrorepati\b/.test(text)) preds.push(r => (r.assets || 0) >= 1e7);
+  if (/\bwomen\b|\bfemale\b/.test(text)) preds.push(r => r.gender === 'Female');
+  if (/\bfirst.term\b|\bfirst.time\b/.test(text)) preds.push(r => r.terms === 1);
+  if (/\bveteran|\b3\+ terms\b/.test(text)) preds.push(r => (r.terms || 0) >= 3);
+  const age = nlParseAge(text);
+  if (age.over) preds.push(r => (r.age || 0) > age.over);
+  if (age.under) preds.push(r => (r.age || 0) < age.under);
+  const amt = nlParseAmount(text);
+  if (amt != null && /over|above|more than|>/.test(text)) preds.push(r => (r.assets || 0) >= amt);
+  if (amt != null && /under|below|less than|</.test(text)) preds.push(r => (r.assets || 0) <= amt);
+  return preds;
+}
+function nlRowsHTML(rows, cap) {
+  return rows.slice(0, cap).map(r => `<a href="#/node/${encodeURIComponent(r.id)}">
+    <i class="dot" style="background:${TYPE_COLOR('person')}"></i>${esc(r.name)}
+    <span class="chip">${esc(r.party || '')}${r.constituency ? ' · ' + esc(r.constituency) : ''}</span></a>`).join('');
+}
+function nlAnswerShell(interpretation, bodyHtml, browseHref) {
+  return `<div class="card" style="max-width:none;padding:14px 16px;margin:10px 0;font-size:13px">
+    <div style="font-size:10.5px;color:var(--muted);margin-bottom:7px;letter-spacing:.04em">INTERPRETED AS: <span style="color:var(--ink)">${esc(interpretation)}</span></div>
+    ${bodyHtml}
+    ${browseHref ? `<div class="sub" style="margin-top:8px;font-size:12px"><a href="${browseHref}" style="color:var(--accent);text-decoration:none">Open as full table →</a></div>` : ''}
+  </div>`;
+}
+
+function nlAnswer(rawQ) {
+  const text = ' ' + rawQ.toLowerCase().trim().replace(/[?.!]/g, '') + ' ';
+  if (text.trim().split(/\s+/).length < 2) return null;
+  const state = nlFindEntity(text, nlStateNames(), NL_STATE_ABBR);
+  const party = nlFindEntity(text, nlPartyNames(), NL_PARTY_ABBR);
+  const allMPs = () => sittingMPs().map(mpRow);
+
+  // 1. Seat winner lookup: "who won <seat> (in <year>)?"
+  let m = text.match(/who\s+(?:won|win)\s+(.+?)(?:\s+in\s+(\d{4}))?\s*$/);
+  if (m) {
+    const seatQ = m[1].trim();
+    const seatNode = DATA.nodes.find(n => n.type === 'constituency' && resolveBase(n.name) === resolveBase(seatQ))
+      || DATA.nodes.filter(n => n.type === 'constituency' && n.name.toLowerCase().includes(seatQ))[0];
+    if (seatNode) {
+      let hist = seatHistory(seatNode);
+      if (m[2]) hist = hist.filter(r => String(r.year) === m[2]);
+      if (hist.length) {
+        const body = hist.map(r => `<div class="sub">${esc(r.year || '')} — <a href="#/node/${encodeURIComponent(r.personId)}" style="color:var(--ink);font-weight:600;text-decoration:none">${esc(r.personName)}</a>
+          ${r.party ? `<span class="chip">${esc(r.party)}</span>` : ''}${r.votes != null ? ` · ${num(r.votes)} votes` : ''}</div>`).join('');
+        return { intent: 'seat_winner', interpretation: `who won ${seatNode.name}${m[2] ? ' in ' + m[2] : ''}`, html: nlAnswerShell(`who won ${seatNode.name}${m[2] ? ' in ' + m[2] : ''}`, body) };
+      }
+    }
+  }
+
+  // 2. Current rep lookup: "who is the mp/mla for/from/of <seat>"
+  m = text.match(/who\s+is\s+the\s+(?:mp|mla)\s+(?:for|from|of)\s+(.+?)\s*$/);
+  if (m) {
+    const seatQ = m[1].trim();
+    const seatNode = DATA.nodes.find(n => n.type === 'constituency' && resolveBase(n.name) === resolveBase(seatQ))
+      || DATA.nodes.filter(n => n.type === 'constituency' && n.name.toLowerCase().includes(seatQ))[0];
+    if (seatNode) {
+      const rep = mpOf(seatNode.id);
+      const interp = `current representative of ${seatNode.name}`;
+      const body = rep ? `<div class="sub"><a href="#/node/${encodeURIComponent(rep.id)}" style="color:var(--ink);font-weight:600;text-decoration:none">${esc(rep.name)}</a>
+        ${currentParty(rep.id) ? `<span class="chip">${esc(currentParty(rep.id).name)}</span>` : ''}</div>` : `<div class="sub">Vacant / no current representative on file.</div>`;
+      return { intent: 'current_rep', interpretation: interp, html: nlAnswerShell(interp, body) };
+    }
+  }
+
+  // 3. Margin lookup: "margin in/for <seat> (in <year>)?"
+  m = text.match(/margin\s+(?:in|for)\s+(.+?)(?:\s+in\s+(\d{4}))?\s*$/);
+  if (m) {
+    const seatQ = m[1].trim();
+    const seatNode = DATA.nodes.find(n => n.type === 'constituency' && resolveBase(n.name) === resolveBase(seatQ))
+      || DATA.nodes.filter(n => n.type === 'constituency' && n.name.toLowerCase().includes(seatQ))[0];
+    if (seatNode) {
+      let hist = seatHistory(seatNode).filter(r => r.margin != null);
+      if (m[2]) hist = hist.filter(r => String(r.year) === m[2]);
+      const row = hist[0];
+      const interp = `margin in ${seatNode.name}${m[2] ? ' ' + m[2] : ''}`;
+      const body = row ? `<div class="sub">${esc(row.year || '')} — <b>${num(row.margin)}</b>${row.marginPct != null ? ` (${row.marginPct}pp)` : ''} · won by ${esc(row.personName)}${row.turnout != null ? ` · turnout ${row.turnout}%` : ''}</div>`
+        : `<div class="sub">No margin data on file for this seat.</div>`;
+      return { intent: 'margin', interpretation: interp, html: nlAnswerShell(interp, body) };
+    }
+  }
+
+  // 4. Closest/safest seats (optionally state-scoped)
+  m = text.match(/\b(closest|safest|thinnest|biggest margin)\b.*\bseats?\b/);
+  if (m) {
+    const wantClosest = /closest|thinnest/.test(m[1]);
+    const seats = DATA.nodes.filter(n => n.type === 'constituency' && n.props.kind !== 'assembly'
+      && (!state || n.props.state === state.value));
+    const withMargin = seats.map(n => ({ n, h: seatHistory(n) })).filter(x => x.h[0]?.marginPct != null);
+    withMargin.sort((a, b) => wantClosest ? a.h[0].marginPct - b.h[0].marginPct : b.h[0].marginPct - a.h[0].marginPct);
+    const top = withMargin.slice(0, 10);
+    const interp = `${wantClosest ? 'closest' : 'safest'} seats${state ? ' in ' + state.value : ''}`;
+    const body = top.map(x => `<a href="#/war/${encodeURIComponent(x.n.id)}"><i class="dot" style="background:${TYPE_COLOR('constituency')}"></i>${esc(x.n.name)}
+      <span class="chip">${x.h[0].marginPct}pp</span></a>`).join(' ');
+    return { intent: 'closest_safest', interpretation: interp, html: nlAnswerShell(interp, `<div class="pillrow">${body}</div>`) };
+  }
+
+  // 5. Party seats: "how many seats does/did <party> have/win (in <state>)? (in <year>)?"
+  m = text.match(/how many seats\s+(?:does|did|do)\s+.+?\s+(?:have|win|hold)/);
+  if (m && party) {
+    const year = (text.match(/\b(2009|2014|2019|2024)\b/) || [])[1];
+    let counts;
+    if (year === '2009') counts = termSeatsHistorical('body:15th-lok-sabha');
+    else if (year === '2014') counts = termSeatsHistorical('body:16th-lok-sabha');
+    else if (year === '2019') counts = termSeatsHistorical('body:17th-lok-sabha');
+    else counts = termSeatsCurrent();
+    const n = counts.get(party.value) || 0;
+    const interp = `${party.value} seats${year ? ' in ' + year : ' (current)'}`;
+    return { intent: 'party_seats', interpretation: interp, html: nlAnswerShell(interp, `<div class="sub" style="font-size:20px"><b>${n}</b> seats</div>`,
+      `#/node/${encodeURIComponent(DATA.nodes.find(n2 => n2.type === 'party' && n2.name === party.value)?.id || '')}`) };
+  }
+
+  // 6. Wealth lookup: "assets/net worth/wealth of <person>"
+  m = text.match(/(?:assets|net worth|wealth)\s+of\s+(.+?)\s*$/);
+  if (m) {
+    const person = DATA.nodes.find(n => n.type === 'person' && n.name.toLowerCase() === m[1].trim())
+      || DATA.nodes.filter(n => n.type === 'person' && n.name.toLowerCase().includes(m[1].trim()))[0];
+    if (person) {
+      const a24 = person.props.affidavit, a19 = person.props.affidavit_2019, a14 = person.props.affidavit_2014;
+      const pts = [a14 && `2014: ${crore(a14.assets_inr)}`, a19 && `2019: ${crore(a19.assets_inr)}`, a24 && `2024: ${crore(a24.assets_inr)}`].filter(Boolean);
+      const interp = `declared assets of ${person.name}`;
+      const body = pts.length ? `<div class="sub">${pts.join(' → ')}</div>` : `<div class="sub">No affidavit on file.</div>`;
+      return { intent: 'wealth', interpretation: interp, html: nlAnswerShell(interp, body, `#/node/${encodeURIComponent(person.id)}`) };
+    }
+  }
+
+  // 7. Cases lookup: "(criminal) cases of/against <person>"
+  m = text.match(/(?:criminal\s+)?cases\s+(?:of|against)\s+(.+?)\s*$/);
+  if (m) {
+    const person = DATA.nodes.find(n => n.type === 'person' && n.name.toLowerCase() === m[1].trim())
+      || DATA.nodes.filter(n => n.type === 'person' && n.name.toLowerCase().includes(m[1].trim()))[0];
+    if (person) {
+      const aff = person.props.affidavit;
+      const interp = `criminal cases against ${person.name}`;
+      const body = aff ? `<div class="sub"><b>${aff.criminal_cases}</b> declared case${aff.criminal_cases === 1 ? '' : 's'} (2024 affidavit)</div>` : `<div class="sub">No affidavit on file.</div>`;
+      return { intent: 'cases', interpretation: interp, html: nlAnswerShell(interp, body, `#/node/${encodeURIComponent(person.id)}`) };
+    }
+  }
+
+  // 8. News about <entity>
+  m = text.match(/news\s+(?:about|on)\s+(.+?)\s*$/);
+  if (m) {
+    const entity = DATA.nodes.find(n => ['person', 'party'].includes(n.type) && n.name.toLowerCase() === m[1].trim())
+      || DATA.nodes.filter(n => ['person', 'party'].includes(n.type) && n.name.toLowerCase().includes(m[1].trim()))[0];
+    if (entity) {
+      const items = (adj.get(entity.id) || []).filter(x => x.rel === 'MENTIONED_IN').map(x => byId.get(x.other)).filter(Boolean)
+        .sort((a, b) => (Date.parse(b.props.published) || 0) - (Date.parse(a.props.published) || 0)).slice(0, 5);
+      const interp = `news about ${entity.name}`;
+      const body = items.length ? items.map(n2 => `<div class="sub"><a href="#/node/${encodeURIComponent(n2.id)}" style="color:var(--ink);text-decoration:none;font-weight:600">${esc(n2.name)}</a></div>`).join('')
+        : `<div class="sub">No news mentions on file.</div>`;
+      return { intent: 'news', interpretation: interp, html: nlAnswerShell(interp, body) };
+    }
+  }
+
+  // 9. Compare: "compare <A> and/vs/with <B>"
+  m = text.match(/compare\s+(.+?)\s+(?:and|vs\.?|with)\s+(.+?)\s*$/);
+  if (m) {
+    const find = q => {
+      const qt = q.trim();
+      if (NL_PARTY_ABBR[qt]) { const p = DATA.nodes.find(n => n.type === 'party' && n.name === NL_PARTY_ABBR[qt]); if (p) return p; }
+      return DATA.nodes.find(n => ['person', 'party', 'constituency'].includes(n.type) && n.name.toLowerCase() === qt)
+        || DATA.nodes.filter(n => ['person', 'party', 'constituency'].includes(n.type) && n.name.toLowerCase().includes(qt))[0];
+    };
+    const a = find(m[1]), b = find(m[2]);
+    if (a && b) {
+      const interp = `compare ${a.name} vs ${b.name}`;
+      return { intent: 'compare', interpretation: interp, html: nlAnswerShell(interp,
+        `<div class="sub">Opening full comparison for <b>${esc(a.name)}</b> vs <b>${esc(b.name)}</b>…</div>`,
+        `#/compare/${encodeURIComponent(a.id)}/${encodeURIComponent(b.id)}`) };
+    }
+  }
+
+  // 10. Count: "how many mps/mlas <filters>"
+  m = text.match(/how many\s+(?:mps|mlas|members)\b(.*)$/);
+  if (m) {
+    const preds = nlBuildFilter(text, state, party);
+    const rows = allMPs().filter(r => preds.every(p => p(r)));
+    const interp = `count of MPs${state ? ' in ' + state.value : ''}${party ? ' · ' + party.value : ''}${preds.length ? ' matching filters' : ''}`;
+    return { intent: 'count', interpretation: interp, html: nlAnswerShell(interp, `<div class="sub" style="font-size:20px"><b>${rows.length}</b> MPs</div>${nlRowsHTML(rows, 8) ? `<div class="pillrow" style="margin-top:8px">${nlRowsHTML(rows, 8)}</div>` : ''}`) };
+  }
+
+  // 11. Superlative: "richest/poorest/youngest/oldest/most cases/most terms (mp) <filters>"
+  m = text.match(/\b(richest|poorest|youngest|oldest|most cases|most terms)\b/);
+  if (m) {
+    const preds = nlBuildFilter(text, state, party);
+    let rows = allMPs().filter(r => preds.every(p => p(r)));
+    const key = { richest: 'assets', poorest: 'assets', youngest: 'age', oldest: 'age', 'most cases': 'cases', 'most terms': 'terms' }[m[1]];
+    const desc = !['poorest', 'youngest'].includes(m[1]);
+    rows = rows.filter(r => r[key] != null).sort((a, b) => desc ? (b[key] - a[key]) : (a[key] - b[key])).slice(0, 5);
+    const interp = `${m[1]} MPs${state ? ' in ' + state.value : ''}${party ? ' · ' + party.value : ''}`;
+    const fmt = r => key === 'assets' ? crore(r[key]) : (key === 'age' ? r[key] + ' yrs' : r[key] + (key === 'cases' ? ' cases' : ' terms'));
+    const body = rows.map(r => `<a href="#/node/${encodeURIComponent(r.id)}"><i class="dot" style="background:${TYPE_COLOR('person')}"></i>${esc(r.name)}
+      <span class="chip">${fmt(r)}</span></a>`).join(' ');
+    return { intent: 'superlative', interpretation: interp, html: nlAnswerShell(interp, `<div class="pillrow">${body}</div>`) };
+  }
+
+  // 12. Generic filter list: "show/list mps/mlas <filters>" -- broadest, tried last
+  const hasFilterWord = /criminal cases|crorepati|women|female|first.term|veteran|over \d|under \d|\bcases\b/.test(text);
+  if ((state || party || hasFilterWord) && /\b(mps?|mlas?|members)\b/.test(text)) {
+    const preds = nlBuildFilter(text, state, party);
+    const rows = allMPs().filter(r => preds.every(p => p(r)));
+    const interp = `MPs${state ? ' in ' + state.value : ''}${party ? ' · ' + party.value : ''}${hasFilterWord ? ' matching filters' : ''}`;
+    return { intent: 'filter_list', interpretation: interp, html: nlAnswerShell(interp,
+      `<div class="sub">${rows.length} match${rows.length === 1 ? '' : 'es'}</div><div class="pillrow" style="margin-top:6px">${nlRowsHTML(rows, 10)}</div>`,
+      '#/browse/all') };
+  }
+
+  return null;
 }
 
 // ---- search with type filters ----
@@ -379,7 +660,10 @@ let debounce;
 $('q').addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(doSearch, 120); });
 function doSearch() {
   const q = $('q').value.toLowerCase().trim();
-  if (!q) { $('results').innerHTML = ''; return; }
+  if (!q) { $('results').innerHTML = ''; $('nlanswer').innerHTML = ''; return; }
+  let nl = null;
+  try { nl = nlAnswer(q); } catch (e) { nl = null; } // never let a grammar bug break plain search
+  $('nlanswer').innerHTML = nl ? nl.html : '';
   const starts = [], contains = [];
   for (const {n, hay} of searchIndex) {
     if (typeFilter && n.type !== typeFilter) continue;
@@ -1384,8 +1668,9 @@ function buildElectionsBySeat() {
     const state = resolveSeatState(e.props.constituency, e.props.state, e.src);
     const seatKey = resolveBase(e.props.constituency) + '|' + (state || '');
     const row = {
-      electionId: e.dst, electionName: electionNode.name, personId: e.src,
-      personName: byId.get(e.src)?.name, party: null,
+      electionId: e.dst, electionName: electionNode.name,
+      year: parseInt((electionNode.name.match(/\d{4}/) || [])[0]) || null,
+      personId: e.src, personName: byId.get(e.src)?.name, party: null,
       votes: e.props.votes ?? null, share: e.props.vote_share ?? null,
       margin: e.props.margin ?? null, marginPct: e.props.margin_pct ?? null,
       turnout: e.props.turnout ?? null,
@@ -1413,6 +1698,7 @@ function buildElectionsBySeat() {
     }
     push(seatKey, {
       electionId: electionId || null, electionName: electionId ? byId.get(electionId).name : bodyNode.name,
+      year: TERM_YEAR[bodyNode.id] || null,
       personId: e.src, personName: byId.get(e.src)?.name, party,
       votes: null, share: null, margin: null, marginPct: null, turnout: null,
       runnerUp: null, runnerUpParty: null,
