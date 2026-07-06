@@ -850,6 +850,43 @@ function termSeatsCurrent() {
   return counts;
 }
 
+function stateStrongholdTable() {
+  // state name -> Map(partyName -> seat count), built from every current
+  // sitting MP's constituency; LS-only (assembly is only ingested for UP,
+  // and mixing the two would make states incomparable in one table).
+  const byState = new Map();
+  for (const p of sittingMPs()) {
+    const c = constituencyOf(p.id); if (!c || !c.props.state) continue;
+    const pn = currentParty(p.id); if (!pn) continue;
+    if (!byState.has(c.props.state)) byState.set(c.props.state, new Map());
+    const m = byState.get(c.props.state);
+    m.set(pn.name, (m.get(pn.name) || 0) + 1);
+  }
+  const stateIdByName = new Map(DATA.nodes.filter(n => n.type === 'state').map(n => [n.name, n.id]));
+  const rows = [...byState.entries()].map(([state, parties]) => {
+    const ranked = [...parties.entries()].sort((a, b) => b[1] - a[1]);
+    const total = ranked.reduce((a, [, n]) => a + n, 0);
+    return { state, total, leader: ranked[0], runnerUp: ranked[1] };
+  }).sort((a, b) => b.total - a.total);
+
+  return `<table class="mps"><thead><tr>
+      <th>State</th><th class="num">Seats</th><th>Leading party</th><th class="num">Seats</th><th class="num">Share</th><th>Runner-up</th>
+    </tr></thead><tbody>
+      ${rows.map(r => {
+        const sid = stateIdByName.get(r.state);
+        const share = Math.round(100 * r.leader[1] / r.total);
+        return `<tr>
+          <td>${sid ? `<a href="#/node/${encodeURIComponent(sid)}" style="color:var(--ink);text-decoration:none;font-weight:600">${esc(r.state)}</a>` : esc(r.state)}</td>
+          <td class="num">${r.total}</td>
+          <td><i class="dot" style="background:${partyColor(r.leader[0])}"></i> ${esc(r.leader[0])}</td>
+          <td class="num">${r.leader[1]}</td>
+          <td class="num">${share}%</td>
+          <td>${r.runnerUp ? `${esc(r.runnerUp[0])} (${r.runnerUp[1]})` : '—'}</td>
+        </tr>`;
+      }).join('')}
+    </tbody></table>`;
+}
+
 function seatPanel(label, counts) {
   const total = [...counts.values()].reduce((a, b) => a + b, 0) || 1;
   const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 7);
@@ -873,39 +910,27 @@ function seatPanel(label, counts) {
 }
 
 function truncLabel(s, max) { return s.length > max ? s.slice(0, max - 1) + '…' : s; }
-function partySankey(flows) {
-  const W = 720, H = Math.max(220, 46 * Math.max(3, Math.min(8, flows.length)));
-  const fromNames = [...new Set(flows.map(f => f.from))];
-  const toNames = [...new Set(flows.map(f => f.to))];
-  const fromTotal = new Map(fromNames.map(n => [n, flows.filter(f => f.from === n).reduce((a, f) => a + f.n, 0)]));
-  const toTotal = new Map(toNames.map(n => [n, flows.filter(f => f.to === n).reduce((a, f) => a + f.n, 0)]));
-  const grandTotal = flows.reduce((a, f) => a + f.n, 0) || 1;
-  const gap = 6, padY = 10;
-  const usableH = H - padY * 2 - gap * (fromNames.length - 1 || 0);
-  let y = padY; const fromY = new Map();
-  for (const n of fromNames) { const h = usableH * fromTotal.get(n) / grandTotal; fromY.set(n, { y0: y, y1: y + h }); y += h + gap; }
-  const usableH2 = H - padY * 2 - gap * (toNames.length - 1 || 0);
-  let y2 = padY; const toY = new Map();
-  for (const n of toNames) { const h = usableH2 * toTotal.get(n) / grandTotal; toY.set(n, { y0: y2, y1: y2 + h }); y2 += h + gap; }
-  const fromCursor = new Map(fromNames.map(n => [n, fromY.get(n).y0]));
-  const toCursor = new Map(toNames.map(n => [n, toY.get(n).y0]));
-  const x1 = 170, x2 = W - 170;
-  const paths = flows.slice().sort((a, b) => b.n - a.n).map(f => {
-    const h = usableH * f.n / grandTotal;
-    const sy0 = fromCursor.get(f.from), sy1 = sy0 + h; fromCursor.set(f.from, sy1);
-    const ty0 = toCursor.get(f.to), ty1 = ty0 + h; toCursor.set(f.to, ty1);
-    const mx = (x1 + x2) / 2;
-    return `<path d="M${x1},${sy0} C${mx},${sy0} ${mx},${ty0} ${x2},${ty0}
-                     L${x2},${ty1} C${mx},${ty1} ${mx},${sy1} ${x1},${sy1} Z"
-                  fill="${partyColor(f.from)}" opacity="0.35"><title>${esc(f.from)} → ${esc(f.to)}: ${f.n}</title></path>`;
-  }).join('');
-  const labels = fromNames.map(n => `<text x="${x1 - 8}" y="${(fromY.get(n).y0 + fromY.get(n).y1) / 2}" text-anchor="end"
-      dominant-baseline="middle" font-size="12" fill="var(--ink)">${esc(truncLabel(n, 20))} (${fromTotal.get(n)})<title>${esc(n)}</title></text>
-      <rect x="${x1 - 4}" y="${fromY.get(n).y0}" width="4" height="${fromY.get(n).y1 - fromY.get(n).y0}" fill="${partyColor(n)}"/>`).join('')
-    + toNames.map(n => `<text x="${x2 + 8}" y="${(toY.get(n).y0 + toY.get(n).y1) / 2}" text-anchor="start"
-      dominant-baseline="middle" font-size="12" fill="var(--ink)">${esc(truncLabel(n, 20))} (${toTotal.get(n)})<title>${esc(n)}</title></text>
-      <rect x="${x2}" y="${toY.get(n).y0}" width="4" height="${toY.get(n).y1 - toY.get(n).y0}" fill="${partyColor(n)}"/>`).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;max-width:${W}px" role="img" aria-label="Party defection flow">${paths}${labels}</svg>`;
+function defectionFlowList(flows) {
+  const sorted = flows.slice().sort((a, b) => b.n - a.n);
+  const max = sorted.length ? sorted[0].n : 1;
+  return `<div style="display:flex;flex-direction:column;gap:12px">
+    ${sorted.map(f => `
+      <div style="display:grid;grid-template-columns:minmax(200px,1fr) 34px;align-items:center;gap:12px">
+        <div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:13.5px;margin-bottom:5px;flex-wrap:wrap">
+            <i style="width:8px;height:8px;border-radius:2px;background:${partyColor(f.from)};flex:none"></i>
+            <b>${esc(f.from)}</b><span style="color:var(--muted)">elected as</span>
+            <span style="color:var(--muted)">→</span>
+            <i style="width:8px;height:8px;border-radius:2px;background:${partyColor(f.to)};flex:none"></i>
+            <b>${esc(f.to)}</b><span style="color:var(--muted)">now</span>
+          </div>
+          <div style="background:var(--bg-3);border-radius:4px;height:8px;overflow:hidden">
+            <div style="background:${partyColor(f.from)};height:100%;border-radius:4px;width:${Math.max(3, 100 * f.n / max)}%"></div>
+          </div>
+        </div>
+        <span style="font-size:13px;font-variant-numeric:tabular-nums;text-align:right;color:var(--ink-2)">${f.n}</span>
+      </div>`).join('')}
+  </div>`;
 }
 
 function showParties() {
@@ -920,10 +945,10 @@ function showParties() {
   partyColor('__init__'); // warm the shared color map before any panel renders
   const flowCounts = new Map();
   for (const s of ins.party_switches) {
-    const key = s.from_official + ' ' + s.to_current;
+    const key = JSON.stringify([s.from_official, s.to_current]);
     flowCounts.set(key, (flowCounts.get(key) || 0) + 1);
   }
-  const flows = [...flowCounts.entries()].map(([k, n]) => { const [from, to] = k.split(' '); return { from, to, n }; })
+  const flows = [...flowCounts.entries()].map(([k, n]) => { const [from, to] = JSON.parse(k); return { from, to, n }; })
     .sort((a, b) => b.n - a.n).slice(0, 8);
 
   setView(`
@@ -935,11 +960,13 @@ function showParties() {
     </div>
     ${flows.length ? `
     <div class="eyebrow">Defection flows — elected as → sits with now (top ${flows.length} by volume)</div>
-    <div class="tablecard" style="padding:20px 20px 12px;overflow-x:auto">
-      ${partySankey(flows)}
+    <div class="tablecard" style="padding:20px">
+      ${defectionFlowList(flows)}
     </div>
     <div class="sub" style="margin-top:8px">${ins.party_switches.length} total detected switches since the last election. Full list on the <a href="#/" style="color:var(--accent);text-decoration:none">home page</a>.</div>` : ''}
-  `);
+    <div class="eyebrow">State strongholds — leading party by current Lok Sabha seats</div>
+    <div class="sub" style="margin-bottom:10px">Every state with at least one sitting MP, sorted by total seats. "Share" is the leading party's share of that state's seats.</div>
+    <div class="tablecard"><div class="tablewrap">${stateStrongholdTable()}</div></div>`);
 }
 
 // ---- about / investor page ----
