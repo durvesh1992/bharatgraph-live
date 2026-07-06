@@ -259,6 +259,7 @@
       <a href="#/geo" id="nav-geo">By State</a>
       <a href="#/news" id="nav-news">News</a>
       <a href="#/compare" id="nav-compare">Compare</a>
+      <a href="#/parties" id="nav-parties">Parties</a>
       <a href="#/about" id="nav-about">What we're building</a>
     </nav>
     <span class="badge" id="badge">loading…</span>
@@ -389,16 +390,19 @@ function route() {
   const mBrowse = location.hash.match(/^#\/browse\/(.+)$/);
   const isGeo = location.hash === '#/geo';
   const isNews = location.hash === '#/news';
+  const isParties = location.hash === '#/parties';
   const mCompare = location.hash.match(/^#\/compare(?:\/([^/]+)(?:\/([^/]+))?)?$/);
-  $('nav-home').classList.toggle('on', !mNode && !mBrowse && !isGeo && !isNews && !mCompare && location.hash !== '#/about');
+  $('nav-home').classList.toggle('on', !mNode && !mBrowse && !isGeo && !isNews && !isParties && !mCompare && location.hash !== '#/about');
   $('nav-about').classList.toggle('on', location.hash === '#/about');
   $('nav-browse').classList.toggle('on', !!mBrowse);
   $('nav-geo').classList.toggle('on', isGeo);
   $('nav-news').classList.toggle('on', isNews);
+  $('nav-parties').classList.toggle('on', isParties);
   $('nav-compare').classList.toggle('on', !!mCompare);
   if (location.hash === '#/about') { $('gwrap').hidden = true; showAbout(); }
   else if (isGeo) { showGeoIndex(); }
   else if (isNews) { showNewsFeed(); }
+  else if (isParties) { $('gwrap').hidden = true; showParties(); }
   else if (mCompare) { $('gwrap').hidden = true; showCompare(mCompare[1] && decodeURIComponent(mCompare[1]), mCompare[2] && decodeURIComponent(mCompare[2])); }
   else if (mBrowse) { $('gwrap').hidden = true; showBrowse(decodeURIComponent(mBrowse[1])); }
   else if (mNode && byId.has(decodeURIComponent(mNode[1]))) showEntity(decodeURIComponent(mNode[1]));
@@ -815,6 +819,127 @@ function showHome() {
         `<a href="#/node/${encodeURIComponent(p.id)}"><i class="dot" style="background:${TYPE_COLOR('party')}"></i>${esc(p.name)}
          <span class="chip">${p.mps} · ${Math.round(100 * p.with_cases / p.mps)}% · ${crore(p.avg_assets_inr)}</span></a>`).join('')}
     </div>`);
+}
+
+// ---- party health dashboard: seats over time + defection flows ----
+const PARTY_PALETTE = ['#2a78d6', '#eda100', '#1baf7a', '#c0392b', '#8e44ad', '#16a2a8', '#d17d3f', '#5b6b8c'];
+let partyColorMap = null;
+function partyColor(name) {
+  if (!partyColorMap) {
+    const totals = new Map();
+    for (const body of ['body:15th-lok-sabha', 'body:16th-lok-sabha', 'body:17th-lok-sabha']) {
+      for (const e of DATA.edges) if (e.rel === 'MEMBER_OF' && e.dst === body && e.props.party)
+        totals.set(e.props.party, (totals.get(e.props.party) || 0) + 1);
+    }
+    for (const p of sittingMPs()) { const pn = currentParty(p.id); if (pn) totals.set(pn.name, (totals.get(pn.name) || 0) + 1); }
+    const ranked = [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+    partyColorMap = new Map(ranked.map((n, i) => [n, PARTY_PALETTE[i] ?? null]));
+  }
+  return partyColorMap.get(name) || 'var(--muted)';
+}
+
+function termSeatsHistorical(bodyId) {
+  const counts = new Map();
+  for (const e of DATA.edges) if (e.rel === 'MEMBER_OF' && e.dst === bodyId && e.props.party)
+    counts.set(e.props.party, (counts.get(e.props.party) || 0) + 1);
+  return counts;
+}
+function termSeatsCurrent() {
+  const counts = new Map();
+  for (const p of sittingMPs()) { const pn = currentParty(p.id); if (pn) counts.set(pn.name, (counts.get(pn.name) || 0) + 1); }
+  return counts;
+}
+
+function seatPanel(label, counts) {
+  const total = [...counts.values()].reduce((a, b) => a + b, 0) || 1;
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 7);
+  const max = top.length ? top[0][1] : 1;
+  return `
+    <div style="flex:1;min-width:220px">
+      <div style="font-size:12.5px;font-weight:600;color:var(--ink-2);margin-bottom:8px">${esc(label)} <span style="color:var(--muted);font-weight:400">· ${total} seats</span></div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        ${top.map(([name, n]) => `
+          <div style="display:grid;grid-template-columns:1fr 34px;align-items:center;gap:8px">
+            <div style="display:flex;align-items:center;gap:6px;min-width:0">
+              <i style="width:8px;height:8px;border-radius:2px;background:${partyColor(name)};flex:none"></i>
+              <div style="background:var(--bg-3);border-radius:4px;height:16px;flex:1;overflow:hidden">
+                <div style="background:${partyColor(name)};height:100%;border-radius:4px;width:${Math.max(3, 100 * n / max)}%"></div>
+              </div>
+            </div>
+            <span style="font-size:12px;font-variant-numeric:tabular-nums;text-align:right">${n}</span>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function truncLabel(s, max) { return s.length > max ? s.slice(0, max - 1) + '…' : s; }
+function partySankey(flows) {
+  const W = 720, H = Math.max(220, 46 * Math.max(3, Math.min(8, flows.length)));
+  const fromNames = [...new Set(flows.map(f => f.from))];
+  const toNames = [...new Set(flows.map(f => f.to))];
+  const fromTotal = new Map(fromNames.map(n => [n, flows.filter(f => f.from === n).reduce((a, f) => a + f.n, 0)]));
+  const toTotal = new Map(toNames.map(n => [n, flows.filter(f => f.to === n).reduce((a, f) => a + f.n, 0)]));
+  const grandTotal = flows.reduce((a, f) => a + f.n, 0) || 1;
+  const gap = 6, padY = 10;
+  const usableH = H - padY * 2 - gap * (fromNames.length - 1 || 0);
+  let y = padY; const fromY = new Map();
+  for (const n of fromNames) { const h = usableH * fromTotal.get(n) / grandTotal; fromY.set(n, { y0: y, y1: y + h }); y += h + gap; }
+  const usableH2 = H - padY * 2 - gap * (toNames.length - 1 || 0);
+  let y2 = padY; const toY = new Map();
+  for (const n of toNames) { const h = usableH2 * toTotal.get(n) / grandTotal; toY.set(n, { y0: y2, y1: y2 + h }); y2 += h + gap; }
+  const fromCursor = new Map(fromNames.map(n => [n, fromY.get(n).y0]));
+  const toCursor = new Map(toNames.map(n => [n, toY.get(n).y0]));
+  const x1 = 170, x2 = W - 170;
+  const paths = flows.slice().sort((a, b) => b.n - a.n).map(f => {
+    const h = usableH * f.n / grandTotal;
+    const sy0 = fromCursor.get(f.from), sy1 = sy0 + h; fromCursor.set(f.from, sy1);
+    const ty0 = toCursor.get(f.to), ty1 = ty0 + h; toCursor.set(f.to, ty1);
+    const mx = (x1 + x2) / 2;
+    return `<path d="M${x1},${sy0} C${mx},${sy0} ${mx},${ty0} ${x2},${ty0}
+                     L${x2},${ty1} C${mx},${ty1} ${mx},${sy1} ${x1},${sy1} Z"
+                  fill="${partyColor(f.from)}" opacity="0.35"><title>${esc(f.from)} → ${esc(f.to)}: ${f.n}</title></path>`;
+  }).join('');
+  const labels = fromNames.map(n => `<text x="${x1 - 8}" y="${(fromY.get(n).y0 + fromY.get(n).y1) / 2}" text-anchor="end"
+      dominant-baseline="middle" font-size="12" fill="var(--ink)">${esc(truncLabel(n, 20))} (${fromTotal.get(n)})<title>${esc(n)}</title></text>
+      <rect x="${x1 - 4}" y="${fromY.get(n).y0}" width="4" height="${fromY.get(n).y1 - fromY.get(n).y0}" fill="${partyColor(n)}"/>`).join('')
+    + toNames.map(n => `<text x="${x2 + 8}" y="${(toY.get(n).y0 + toY.get(n).y1) / 2}" text-anchor="start"
+      dominant-baseline="middle" font-size="12" fill="var(--ink)">${esc(truncLabel(n, 20))} (${toTotal.get(n)})<title>${esc(n)}</title></text>
+      <rect x="${x2}" y="${toY.get(n).y0}" width="4" height="${toY.get(n).y1 - toY.get(n).y0}" fill="${partyColor(n)}"/>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;max-width:${W}px" role="img" aria-label="Party defection flow">${paths}${labels}</svg>`;
+}
+
+function showParties() {
+  $('gwrap').hidden = true;
+  const ins = DATA.insights;
+  const terms = [
+    ['15th LS (2009)', termSeatsHistorical('body:15th-lok-sabha')],
+    ['16th LS (2014)', termSeatsHistorical('body:16th-lok-sabha')],
+    ['17th LS (2019)', termSeatsHistorical('body:17th-lok-sabha')],
+    ['18th LS (2024)', termSeatsCurrent()],
+  ];
+  partyColor('__init__'); // warm the shared color map before any panel renders
+  const flowCounts = new Map();
+  for (const s of ins.party_switches) {
+    const key = s.from_official + ' ' + s.to_current;
+    flowCounts.set(key, (flowCounts.get(key) || 0) + 1);
+  }
+  const flows = [...flowCounts.entries()].map(([k, n]) => { const [from, to] = k.split(' '); return { from, to, n }; })
+    .sort((a, b) => b.n - a.n).slice(0, 8);
+
+  setView(`
+    <h2>Party health</h2>
+    <div class="sub" style="margin-bottom:18px">Seat counts across four Lok Sabha terms (2009–2024) and where MPs who switched parties actually ended up.</div>
+    <div class="eyebrow">Seats won, by term</div>
+    <div class="tablecard" style="padding:20px;display:flex;gap:24px;flex-wrap:wrap">
+      ${terms.map(([label, counts]) => seatPanel(label, counts)).join('')}
+    </div>
+    ${flows.length ? `
+    <div class="eyebrow">Defection flows — elected as → sits with now (top ${flows.length} by volume)</div>
+    <div class="tablecard" style="padding:20px 20px 12px;overflow-x:auto">
+      ${partySankey(flows)}
+    </div>
+    <div class="sub" style="margin-top:8px">${ins.party_switches.length} total detected switches since the last election. Full list on the <a href="#/" style="color:var(--accent);text-decoration:none">home page</a>.</div>` : ''}
+  `);
 }
 
 // ---- about / investor page ----
