@@ -406,7 +406,8 @@ function route() {
   const isNews = location.hash === '#/news';
   const isParties = location.hash === '#/parties';
   const mCompare = location.hash.match(/^#\/compare(?:\/([^/]+)(?:\/([^/]+))?)?$/);
-  $('nav-home').classList.toggle('on', !mNode && !mBrowse && !isGeo && !isNews && !isParties && !mCompare && location.hash !== '#/about');
+  const mWar = location.hash.match(/^#\/war(?:\/(.+))?$/);
+  $('nav-home').classList.toggle('on', !mNode && !mBrowse && !isGeo && !isNews && !isParties && !mCompare && !mWar && location.hash !== '#/about');
   $('nav-about').classList.toggle('on', location.hash === '#/about');
   $('nav-browse').classList.toggle('on', !!mBrowse);
   $('nav-geo').classList.toggle('on', isGeo);
@@ -418,6 +419,7 @@ function route() {
   else if (isNews) { showNewsFeed(); }
   else if (isParties) { $('gwrap').hidden = true; showParties(); }
   else if (mCompare) { $('gwrap').hidden = true; showCompare(mCompare[1] && decodeURIComponent(mCompare[1]), mCompare[2] && decodeURIComponent(mCompare[2])); }
+  else if (mWar) { $('gwrap').hidden = true; showWarRoom(mWar[1] && decodeURIComponent(mWar[1])); }
   else if (mBrowse) { $('gwrap').hidden = true; showBrowse(decodeURIComponent(mBrowse[1])); }
   else if (mNode && byId.has(decodeURIComponent(mNode[1]))) showEntity(decodeURIComponent(mNode[1]));
   else showHome();
@@ -1240,7 +1242,295 @@ function showDetail(node) {
   drawEgo(node.id);
 }
 
-const resolveBase = s => String(s || '').toLowerCase().replace(/\s*\((sc|st)\)\s*$/, '').replace(/[^a-z]/g, '');
+// Strips reservation suffixes (SC/ST) AND the assembly-seat marker (AC) that
+// every assembly constituency node's display name carries (e.g. "Behat (AC)")
+// but that WON/MEMBER_OF edges' own `constituency` text prop never includes
+// (e.g. "Behat") -- without stripping AC too, every assembly seat's war-room
+// history silently comes up empty despite a real MLA/result existing.
+const resolveBase = s => String(s || '').toLowerCase().replace(/\s*\((sc|st|ac)\)\s*$/, '').replace(/[^a-z]/g, '');
+
+// ---- elections-by-seat index (shared: war room + deep profile + NL search) ----
+// WON edges give votes/margin/runner-up but NOT the winner's own party at that
+// election (only current affiliation, via currentParty(), is stored anywhere
+// except historical MEMBER_OF-to-body edges). So this index cross-references
+// both: WON edges supply the numbers, MEMBER_OF-to-body edges supply the party
+// (historical terms carry it as a text prop; the two CURRENT_BODIES read it via
+// the live party-node edge instead -- same rule the party dashboard uses).
+// Some vintages (2014 LS) only have `{constituency}` on the WON edge -- no
+// state, no votes. A seat's history must still merge correctly across years
+// even when a row is missing state, so a same-named seat isn't split into two
+// "different" seats just because one year's source was thinner than another.
+const ELECTION_TO_BODY = {
+  'election:lok-sabha-2024': 'body:18th-lok-sabha',
+  'election:lok-sabha-2019': 'body:17th-lok-sabha',
+  'election:lok-sabha-2014': 'body:16th-lok-sabha',
+  'election:up-assembly-2022': 'body:18th-uttar-pradesh-assembly',
+  'election:up-assembly-2017': 'body:17th-uttar-pradesh-assembly',
+};
+const BODY_TO_ELECTION = Object.fromEntries(Object.entries(ELECTION_TO_BODY).map(([e, b]) => [b, e]));
+
+let _electionsBySeat = null;
+let _constituencyStateIndex = null;
+function seatStateIndex() {
+  if (_constituencyStateIndex) return _constituencyStateIndex;
+  const idx = new Map(); // resolveBase(name) -> Set(states)
+  for (const n of DATA.nodes) {
+    if (n.type !== 'constituency' || !n.props.state) continue;
+    const k = resolveBase(n.name);
+    if (!idx.has(k)) idx.set(k, new Set());
+    idx.get(k).add(n.props.state);
+  }
+  _constituencyStateIndex = idx;
+  return idx;
+}
+// Best-effort state resolution when an edge's own props lack one (the 2014 LS
+// gap): prefer an unambiguous constituency-name match; if the name is
+// genuinely used in >1 state (e.g. Aurangabad in both Bihar and Maharashtra),
+// fall back to that SAME PERSON's other known state (from any of their other
+// WON/MEMBER_OF edges) as a tie-breaker; otherwise leave it blank rather than
+// silently merging two different real seats together.
+function resolveSeatState(constituencyName, explicitState, personId) {
+  if (explicitState) return explicitState;
+  const candidates = seatStateIndex().get(resolveBase(constituencyName));
+  if (candidates && candidates.size === 1) return [...candidates][0];
+  if (candidates && candidates.size > 1 && personId) {
+    for (const x of nbs(personId)) {
+      const s = x.props?.state || (x.node?.type === 'constituency' ? x.node.props?.state : null);
+      if (s && candidates.has(s)) return s;
+    }
+  }
+  return null;
+}
+
+function buildElectionsBySeat() {
+  if (_electionsBySeat) return _electionsBySeat;
+  const map = new Map();
+  const push = (key, row) => { if (!map.has(key)) map.set(key, []); map.get(key).push(row); };
+  const byPersonElection = new Map();
+
+  for (const e of DATA.edges) {
+    if (e.rel !== 'WON') continue;
+    const electionNode = byId.get(e.dst);
+    if (!electionNode || electionNode.type !== 'election') continue;
+    const state = resolveSeatState(e.props.constituency, e.props.state, e.src);
+    const seatKey = resolveBase(e.props.constituency) + '|' + (state || '');
+    const row = {
+      electionId: e.dst, electionName: electionNode.name, personId: e.src,
+      personName: byId.get(e.src)?.name, party: null,
+      votes: e.props.votes ?? null, share: e.props.vote_share ?? null,
+      margin: e.props.margin ?? null, marginPct: e.props.margin_pct ?? null,
+      turnout: e.props.turnout ?? null,
+      runnerUp: e.props.runner_up ?? null, runnerUpParty: e.props.runner_up_party ?? null,
+    };
+    push(seatKey, row);
+    byPersonElection.set(e.src + '|' + e.dst, row);
+  }
+
+  for (const e of DATA.edges) {
+    if (e.rel !== 'MEMBER_OF') continue;
+    const bodyNode = byId.get(e.dst);
+    if (!bodyNode || bodyNode.type !== 'body' || bodyNode.id === 'body:rajya-sabha') continue;
+    const isCurrent = CURRENT_BODIES.includes(bodyNode.id);
+    const party = isCurrent ? currentParty(e.src)?.name : e.props.party;
+    const constituency = isCurrent ? constituencyOf(e.src)?.name : e.props.constituency;
+    const rawState = isCurrent ? constituencyOf(e.src)?.props?.state : e.props.state;
+    if (!constituency) continue;
+    const state = resolveSeatState(constituency, rawState, e.src);
+    const seatKey = resolveBase(constituency) + '|' + (state || '');
+    const electionId = BODY_TO_ELECTION[bodyNode.id];
+    if (electionId) {
+      const existing = byPersonElection.get(e.src + '|' + electionId);
+      if (existing) { existing.party = party; continue; }
+    }
+    push(seatKey, {
+      electionId: electionId || null, electionName: electionId ? byId.get(electionId).name : bodyNode.name,
+      personId: e.src, personName: byId.get(e.src)?.name, party,
+      votes: null, share: null, margin: null, marginPct: null, turnout: null,
+      runnerUp: null, runnerUpParty: null,
+    });
+  }
+
+  for (const rows of map.values()) rows.sort((a, b) => b.electionName.localeCompare(a.electionName));
+  _electionsBySeat = map;
+  return map;
+}
+function seatHistory(constituencyNode) {
+  const key = resolveBase(constituencyNode.name) + '|' + (constituencyNode.props.state || '');
+  return buildElectionsBySeat().get(key) || [];
+}
+
+// ---- F1: constituency war room ----
+function safetyBand(marginPct) {
+  if (marginPct == null) return null;
+  if (marginPct < 2) return { label: 'knife-edge', color: '#c0392b' };
+  if (marginPct < 8) return { label: 'competitive', color: '#d17d3f' };
+  if (marginPct < 15) return { label: 'leaning', color: '#c9a227' };
+  return { label: 'stronghold', color: '#1baf7a' };
+}
+
+function warRoomTimeline(history) {
+  const withVotes = history.filter(r => r.votes != null);
+  const max = withVotes.length ? Math.max(...withVotes.map(r => r.share ?? (r.votes / (r.votes + (r.margin || 0)) * 100))) : 1;
+  return history.map(r => {
+    const year = (r.electionName.match(/\d{4}/) || [r.electionName])[0];
+    const barPct = r.share != null ? r.share : (r.votes != null ? Math.max(3, 60 * r.votes / (max ? (withVotes[0]?.votes || r.votes) : r.votes)) : null);
+    return `
+      <div style="display:grid;grid-template-columns:48px 1fr auto;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums">${esc(year)}</span>
+        <div>
+          <div style="font-size:13.5px;margin-bottom:3px">
+            <a href="#/node/${encodeURIComponent(r.personId)}" style="color:var(--ink);font-weight:600;text-decoration:none">${esc(r.personName || '—')}</a>
+            ${r.party ? `<span class="chip" style="margin-left:4px">${esc(r.party)}</span>` : ''}
+            ${r.runnerUp ? `<span style="color:var(--muted)"> beat ${esc(r.runnerUp)}${r.runnerUpParty ? ` (${esc(r.runnerUpParty)})` : ''}</span>` : ''}
+          </div>
+          ${barPct != null ? `<div style="background:var(--bg-3);border-radius:4px;height:8px;max-width:320px;overflow:hidden">
+            <div style="background:${partyColor(r.party || '')};height:100%;border-radius:4px;width:${Math.min(100, barPct)}%"></div></div>` : ''}
+        </div>
+        <span style="font-size:12.5px;color:var(--ink-2);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">
+          ${r.votes != null ? `${num(r.votes)}${r.share != null ? ' · ' + r.share + '%' : ''}` : (r.electionId ? '' : 'no vote data')}
+          ${r.margin != null ? `<br>margin ${num(r.margin)}${r.marginPct != null ? ` (${r.marginPct}pp)` : ''}` : ''}
+        </span>
+      </div>`;
+  }).join('');
+}
+
+function warRoomAnalysis(history) {
+  const withMargin = history.filter(r => r.marginPct != null || (r.margin != null && r.votes != null));
+  if (!withMargin.length) return '';
+  const latest = withMargin[0];
+  const pct = latest.marginPct != null ? latest.marginPct : (100 * latest.margin / latest.votes);
+  const band = safetyBand(pct);
+  const lines = [];
+  if (band) lines.push(`<div class="sub">Latest margin (<b>${latest.marginPct != null ? latest.marginPct + 'pp' : num(latest.margin) + ' votes'}</b>)
+    puts this seat in the <b style="color:${band.color}">${band.label}</b> band
+    <span style="color:var(--muted)">(&lt;2pp knife-edge · 2–8pp competitive · 8–15pp leaning · &gt;15pp stronghold — our formula, not a forecast)</span>.</div>`);
+  const withPct = history.filter(r => r.marginPct != null).slice(0, 3);
+  if (withPct.length >= 2) {
+    const trend = withPct[0].marginPct - withPct[withPct.length - 1].marginPct;
+    if (Math.abs(trend) >= 1) lines.push(`<div class="sub">Margin has ${trend > 0 ? 'widened' : 'narrowed'} by
+      <b>${Math.abs(trend).toFixed(1)}pp</b> over the last ${withPct.length} elections we hold.</div>`);
+  }
+  const parties = history.map(r => r.party).filter(Boolean);
+  const flips = parties.slice(1).filter((p, i) => p && parties[i] && p !== parties[i]).length;
+  if (parties.length >= 2) lines.push(`<div class="sub">Changed hands between parties <b>${flips}×</b> across the ${parties.length} terms we hold.</div>`);
+  let streak = 0;
+  for (let i = 0; i < parties.length - 1 && parties[i] === parties[i + 1]; i++) streak++;
+  if (streak > 0) lines.push(`<div class="sub">Current party has held this seat for <b>${streak + 1} consecutive terms</b> we have on record.</div>`);
+  return lines.join('');
+}
+
+function showWarRoom(seatId) {
+  $('gwrap').hidden = true;
+  const node = seatId ? byId.get(seatId) : null;
+  if (!node) { showWarRoomPicker(); return; }
+
+  const isAssembly = node.props.kind === 'assembly';
+  const state = nbs(node.id).find(x => x.rel === 'LOCATED_IN' && x.dir === 'out')?.node;
+  const history = seatHistory(node);
+  const mp = mpOf(node.id);
+  const latestWithVotes = history.find(r => r.votes != null);
+
+  const repCard = latestWithVotes ? electionCard(
+    `${latestWithVotes.electionName} — margin ${num(latestWithVotes.margin)}${latestWithVotes.marginPct != null ? ` (${latestWithVotes.marginPct}pp)` : ''} · turnout ${latestWithVotes.turnout ?? '—'}%`,
+    { name: latestWithVotes.personName, party: latestWithVotes.party, votes: latestWithVotes.votes, share: latestWithVotes.share,
+      margin: latestWithVotes.margin, margin_pct: latestWithVotes.marginPct, turnout: latestWithVotes.turnout, id: latestWithVotes.personId },
+    latestWithVotes.runnerUp ? { name: latestWithVotes.runnerUp, party: latestWithVotes.runnerUpParty,
+      votes: (latestWithVotes.votes || 0) - (latestWithVotes.margin || 0), share: null } : null) : '';
+
+  const repAffidavit = mp?.props?.affidavit;
+  const repLine = repAffidavit ? `<div class="sub" style="margin-top:-6px;margin-bottom:14px">
+      ${repAffidavit.criminal_cases} criminal case${repAffidavit.criminal_cases === 1 ? '' : 's'} ·
+      assets ${crore(repAffidavit.assets_inr)} · ${esc(repAffidavit.education || '')}
+      <span class="chip">· <a href="${esc(repAffidavit.source)}" target="_blank" rel="noopener">source: ADR/MyNeta</a></span></div>` : '';
+
+  const newsItems = DATA.nodes.filter(n => n.type === 'document' && n.props.kind === 'news')
+    .filter(n => {
+      const hay = (n.name + ' ' + (n.props.summary || '')).toLowerCase();
+      if (hay.includes(node.name.toLowerCase())) return true;
+      return mp && (adj.get(mp.id) || []).some(x => x.rel === 'MENTIONED_IN' && x.other === n.id);
+    })
+    .map(n => ({ ...n, ts: Date.parse(n.props.published) || 0 }))
+    .sort((a, b) => b.ts - a.ts).slice(0, 5);
+
+  // Compare strip: closest/safest seat in-state + the runner-up party's other seat, all
+  // derived from data we already indexed -- no extra fetch.
+  const compareLinks = [];
+  if (state) {
+    const stateSeats = DATA.nodes.filter(n => n.type === 'constituency' && n.props.state === state.name
+      && n.props.kind === node.props.kind && n.id !== node.id);
+    const withMargins = stateSeats.map(n => ({ n, h: seatHistory(n) }))
+      .filter(x => x.h[0]?.marginPct != null);
+    if (withMargins.length) {
+      const closest = withMargins.slice().sort((a, b) => a.h[0].marginPct - b.h[0].marginPct)[0];
+      const safest = withMargins.slice().sort((a, b) => b.h[0].marginPct - a.h[0].marginPct)[0];
+      if (closest) compareLinks.push([closest.n, `${state.name}'s closest seat`]);
+      if (safest && safest.n.id !== closest?.n.id) compareLinks.push([safest.n, `${state.name}'s safest seat`]);
+    }
+  }
+
+  setView(`
+    <h2><i class="dot" style="display:inline-block;background:${TYPE_COLOR('constituency')};width:12px;height:12px;border-radius:4px"></i>
+        ${esc(node.name)} <span style="font-size:15px;font-weight:500;color:var(--muted)">war room</span></h2>
+    <div class="sub" style="margin-bottom:16px">${isAssembly ? 'Assembly constituency' : 'Lok Sabha constituency'}
+      ${state ? ` · <a href="#/node/${encodeURIComponent(state.id)}" style="color:var(--ink-2)">${esc(state.name)}</a>` : ''}
+      · <a href="#/node/${encodeURIComponent(node.id)}" style="color:var(--ink-2)">Seat profile</a>
+      ${mp ? ` · <a href="#/compare/${encodeURIComponent(mp.id)}" style="color:var(--accent);text-decoration:none">Compare with…</a>` : ''}</div>
+
+    <div class="eyebrow">Current ${isAssembly ? 'MLA' : 'MP'}</div>
+    ${repCard || '<div class="note">No current-term result on file for this seat.</div>'}
+    ${repLine}
+
+    <div class="eyebrow">Electoral history</div>
+    <div class="tablecard" style="padding:16px 20px">
+      ${history.length ? warRoomTimeline(history) : '<div class="sub">No election history on file for this seat yet.</div>'}
+    </div>
+
+    ${warRoomAnalysis(history) ? `<div class="eyebrow">Margin &amp; safety</div><div class="tablecard" style="padding:16px 20px">${warRoomAnalysis(history)}</div>` : ''}
+
+    ${newsItems.length ? `
+    <div class="eyebrow">In the news</div>
+    <div class="tablecard" style="padding:16px 20px;display:flex;flex-direction:column;gap:14px">
+      ${newsItems.map(n => `
+        <div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:2px">${esc(n.props.outlet)} · ${esc(n.props.published || '')}</div>
+          <a href="#/node/${encodeURIComponent(n.id)}" style="color:var(--ink);font-weight:600;text-decoration:none;font-size:13.5px">${esc(n.name)}</a>
+        </div>`).join('')}
+    </div>
+    <div class="sub" style="margin-top:6px"><a href="#/news" style="color:var(--accent);text-decoration:none">All news →</a></div>` : ''}
+
+    ${compareLinks.length ? `
+    <div class="eyebrow">Compare this seat</div>
+    <div class="pillrow">${compareLinks.map(([n, label]) =>
+      `<a href="#/compare/${encodeURIComponent(node.id)}/${encodeURIComponent(n.id)}"><i class="dot" style="background:${TYPE_COLOR('constituency')}"></i>${esc(label)}: ${esc(n.name)}</a>`).join('')}</div>` : ''}
+  `);
+}
+
+function showWarRoomPicker() {
+  setView(`
+    <h2>War room</h2>
+    <div class="sub" style="margin-bottom:16px">Search a Lok Sabha or assembly constituency to open its war room.</div>
+    <input id="warpick" placeholder="Search a seat…"
+           style="width:100%;max-width:420px;padding:9px 12px;border-radius:10px;border:1px solid var(--border-2);background:var(--bg);color:var(--ink);font-size:14px">
+    <ul id="warres" style="list-style:none;margin:8px 0 0;padding:0;max-width:420px"></ul>
+  `);
+  const input = $('warpick'), list = $('warres');
+  let debounceW;
+  input.addEventListener('input', () => {
+    clearTimeout(debounceW);
+    debounceW = setTimeout(() => {
+      const q = input.value.toLowerCase().trim();
+      if (!q) { list.innerHTML = ''; return; }
+      const hits = searchIndex.filter(({ n }) => n.type === 'constituency' && n.name.toLowerCase().includes(q)).slice(0, 15);
+      list.innerHTML = hits.map(({ n }) => `<li data-id="${esc(n.id)}" style="padding:7px 10px;cursor:pointer;border-radius:8px;font-size:13.5px">
+        <i class="dot" style="background:${TYPE_COLOR('constituency')}"></i> ${esc(n.name)} <span class="chip">${esc(n.props.state || '')}${n.props.kind === 'assembly' ? ' · Assembly' : ''}</span></li>`).join('');
+    }, 120);
+  });
+  list.addEventListener('click', e => {
+    const li = e.target.closest('li[data-id]'); if (!li) return;
+    location.hash = `#/war/${encodeURIComponent(li.dataset.id)}`;
+  });
+}
+
 function showConstituency(node) {
   const mp = mpOf(node.id);
   let card = '';
@@ -1266,7 +1556,8 @@ function showConstituency(node) {
   setView(`
     <h2><i class="dot" style="display:inline-block;background:${TYPE_COLOR('constituency')};width:12px;height:12px;border-radius:4px"></i>
         ${esc(node.name)}</h2>
-    <div class="sub">${seatLabel}${state ? ` · <a href="#/node/${encodeURIComponent(state.id)}" style="color:var(--ink-2)">${esc(state.name)}</a>` : ''}</div>
+    <div class="sub">${seatLabel}${state ? ` · <a href="#/node/${encodeURIComponent(state.id)}" style="color:var(--ink-2)">${esc(state.name)}</a>` : ''}
+      · <a href="#/war/${encodeURIComponent(node.id)}" style="color:var(--accent);text-decoration:none;font-weight:600">Open war room →</a></div>
     ${mp ? `<div class="sub"><b>${memberLabel}:</b> <a href="#/node/${encodeURIComponent(mp.id)}" style="color:var(--accent);text-decoration:none;font-weight:600">${esc(mp.name)}</a>
       ${currentParty(mp.id) ? `(${esc(currentParty(mp.id).name)})` : ''}</div>` : ''}
     <div class="prov">source: <a href="${esc(node.source)}" target="_blank" rel="noopener">${esc(node.source)}</a></div>
