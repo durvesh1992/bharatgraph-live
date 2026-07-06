@@ -55,6 +55,7 @@
   }
   * { box-sizing: border-box; margin: 0; }
   html { scroll-behavior: smooth; }
+  html, body { overflow-x: hidden; max-width: 100%; }
   body { font: 15.5px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
          background: var(--bg-2); color: var(--ink);
          -webkit-font-smoothing: antialiased; }
@@ -67,10 +68,12 @@
            border-bottom: 1px solid var(--border); padding: 0 28px; }
   .hrow { display: flex; align-items: center; gap: 22px; height: 60px; max-width: 1400px; margin: 0 auto; }
   .brand { font-size: 18.5px; font-weight: 700; letter-spacing: -0.02em; cursor: pointer;
-           display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+           display: flex; align-items: center; gap: 9px; white-space: nowrap; flex: none; }
   .brand .mark { width: 22px; height: 22px; border-radius: 7px; flex: none;
                  background: conic-gradient(from 210deg, var(--t-person), var(--t-party), var(--t-constituency), var(--t-person)); }
-  nav { display: flex; gap: 4px; }
+  nav { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; min-width: 0; }
+  nav::-webkit-scrollbar { display: none; }
+  nav a { flex: none; }
   nav a { padding: 6px 14px; border-radius: 999px; color: var(--ink-2); text-decoration: none;
           font-size: 13.5px; font-weight: 500; transition: background .15s, color .15s; }
   nav a:hover { color: var(--ink); background: var(--bg-3); }
@@ -201,6 +204,35 @@
   .note b { color: var(--ink); }
   .note a { color: var(--accent); text-decoration: none; font-weight: 500; }
 
+  .hero { margin: 4px 0 22px; }
+  .hero h1 { font-size: 40px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.08;
+             text-wrap: balance; max-width: 16ch; }
+  .hero h1 .accent { color: var(--accent); }
+  .hero-sub { color: var(--ink-2); font-size: 15.5px; line-height: 1.6; max-width: 62ch; margin: 12px 0 14px; }
+  .hero-sub b { color: var(--ink); }
+  .sources { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: var(--muted);
+             text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .sources b { color: var(--ink-2); font-weight: 600; }
+  @media (max-width: 640px) { .hero h1 { font-size: 30px; max-width: none; } }
+
+  .ticker { display: flex; align-items: center; gap: 12px; background: var(--bg); border: 1px solid var(--border);
+            border-radius: 999px; padding: 8px 8px 8px 16px; margin: 18px 0 26px; box-shadow: var(--shadow);
+            overflow: hidden; }
+  .ticker .live { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700;
+                  letter-spacing: .07em; color: #d64545; flex: none; }
+  .ticker .live i { width: 7px; height: 7px; border-radius: 50%; background: #d64545;
+                     animation: pulse 1.8s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { .ticker .live i { animation: none; } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  .ticker-items { display: flex; gap: 22px; overflow: hidden; white-space: nowrap; flex: 1; min-width: 0;
+                  mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent 100%);
+                  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent 100%); }
+  .ticker-items a { color: var(--ink); text-decoration: none; font-size: 13px; flex: none; }
+  .ticker-items a:hover { color: var(--accent); }
+  .ticker-items .sep { color: var(--muted); }
+  .ticker-items .src { color: var(--muted); font-weight: 600; margin-right: 5px; }
+  @media (max-width: 760px) { .ticker-items a:not(:first-child) { display: none; } }
+
   .about { max-width: 74ch; }
   .about .lede { font-size: 17px; color: var(--ink-2); line-height: 1.6; margin-top: 8px; }
   .about .lede b { color: var(--ink); }
@@ -269,6 +301,14 @@ const TYPE_COLOR = t => getComputedStyle(document.documentElement)
                      election:'--t-election'}[t] || '--t-other').trim();
 const crore = v => v == null ? '—' : '₹' + (v / 1e7).toLocaleString('en-IN', {maximumFractionDigits: 1}) + ' cr';
 const num = v => v == null ? '—' : v.toLocaleString('en-IN');
+const timeAgo = iso => {
+  const ms = Date.now() - Date.parse(iso);
+  if (!(ms >= 0)) return '';
+  const h = Math.floor(ms / 3.6e6);
+  if (h < 1) return Math.max(1, Math.floor(ms / 60000)) + 'm ago';
+  if (h < 24) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
+};
 const setView = html => { const el = $('entity'); el.classList.remove('view'); void el.offsetWidth; el.innerHTML = html; el.classList.add('view'); };
 
 function init(data) {
@@ -701,14 +741,31 @@ function showHome() {
     ['#/geo', 'By state'], ['#/browse/all', 'All MPs'], ['#/browse/cases', 'Has criminal cases'],
     ['#/browse/crorepati', 'Crorepati'], ['#/browse/women', 'Women MPs'],
     ['#/browse/first-term', 'First-term'], ['#/browse/veterans', 'Veterans (3+ terms)'],
+    ['#/compare', 'Compare'],
   ];
+  const recentNews = DATA.nodes.filter(n => n.type === 'document' && n.props.kind === 'news')
+    .map(n => ({ ...n, ts: Date.parse(n.props.published) || 0 }))
+    .sort((a, b) => b.ts - a.ts).slice(0, 6);
   setView(`
+    <div class="hero">
+      <h1>India's political<br>knowledge graph<span class="accent">.</span></h1>
+      <div class="hero-sub">Every MP, MLA, party, seat, and election result since 2009 — <b>${num(DATA.nodes.length)} entities</b>
+        and <b>${num(DATA.edges.length)} relationships</b>, entity-resolved and traceable to a primary source on every fact.
+        Search on the left, click any card — everything opens. <a href="#/about" style="color:var(--accent);text-decoration:none;font-weight:500">What we're building →</a></div>
+      <div class="sources"><b>Sourced from</b> ADR / MyNeta · Digital Sansad · Election Commission · Wikipedia · Wikidata · Live news (4 outlets)</div>
+    </div>
+    ${recentNews.length ? `
+    <div class="ticker">
+      <div class="live"><i></i>LIVE</div>
+      <div class="ticker-items">
+        ${recentNews.map(n => `<a href="#/node/${encodeURIComponent(n.id)}"><span class="src">${esc(n.props.outlet)}</span>${esc(n.name)}
+          <span class="sep"> · ${timeAgo(n.props.published)}</span></a>`).join('<span class="sep">&nbsp;&nbsp;•&nbsp;&nbsp;</span>')}
+      </div>
+      <a href="#/news" style="flex:none;margin-right:6px;text-decoration:none;font-size:12.5px;font-weight:600;
+              color:var(--accent);white-space:nowrap;padding:5px 10px;border-radius:999px;background:var(--accent-soft)">All news →</a>
+    </div>` : ''}
     <div class="quickfilters">${quickFilters.map(([href, label]) =>
       `<a href="${href}">${esc(label)}</a>`).join('')}</div>
-    <div class="note"><b>Every MP, MLA, party, seat and election result since 2009</b> as one
-      connected, source-linked graph — careers, affidavits, and results across four Lok Sabha
-      terms and two Uttar Pradesh assembly terms. Search on the left, click any card — everything opens.
-      <a href="#/about">Read what we're building →</a></div>
     <h2>The 18th Lok Sabha, by the numbers</h2>
     <div class="sub" style="margin-bottom:16px">From election affidavits (ADR), official Digital Sansad records and constituency-wise results. Every number links to the people behind it.</div>
     <div class="tiles">
