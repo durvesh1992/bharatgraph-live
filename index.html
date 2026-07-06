@@ -226,6 +226,7 @@
       <a href="#/browse/all" id="nav-browse">All MPs</a>
       <a href="#/geo" id="nav-geo">By State</a>
       <a href="#/news" id="nav-news">News</a>
+      <a href="#/compare" id="nav-compare">Compare</a>
       <a href="#/about" id="nav-about">What we're building</a>
     </nav>
     <span class="badge" id="badge">loading…</span>
@@ -348,14 +349,17 @@ function route() {
   const mBrowse = location.hash.match(/^#\/browse\/(.+)$/);
   const isGeo = location.hash === '#/geo';
   const isNews = location.hash === '#/news';
-  $('nav-home').classList.toggle('on', !mNode && !mBrowse && !isGeo && !isNews && location.hash !== '#/about');
+  const mCompare = location.hash.match(/^#\/compare(?:\/([^/]+)(?:\/([^/]+))?)?$/);
+  $('nav-home').classList.toggle('on', !mNode && !mBrowse && !isGeo && !isNews && !mCompare && location.hash !== '#/about');
   $('nav-about').classList.toggle('on', location.hash === '#/about');
   $('nav-browse').classList.toggle('on', !!mBrowse);
   $('nav-geo').classList.toggle('on', isGeo);
   $('nav-news').classList.toggle('on', isNews);
+  $('nav-compare').classList.toggle('on', !!mCompare);
   if (location.hash === '#/about') { $('gwrap').hidden = true; showAbout(); }
   else if (isGeo) { showGeoIndex(); }
   else if (isNews) { showNewsFeed(); }
+  else if (mCompare) { $('gwrap').hidden = true; showCompare(mCompare[1] && decodeURIComponent(mCompare[1]), mCompare[2] && decodeURIComponent(mCompare[2])); }
   else if (mBrowse) { $('gwrap').hidden = true; showBrowse(decodeURIComponent(mBrowse[1])); }
   else if (mNode && byId.has(decodeURIComponent(mNode[1]))) showEntity(decodeURIComponent(mNode[1]));
   else showHome();
@@ -525,6 +529,144 @@ function showNewsFeed() {
   const sel = $('foutlet');
   if (sel) sel.onchange = render;
   render();
+}
+
+// ---- compare view (any two same-type entities side by side) ----
+const CURRENT_BODIES = ['body:18th-lok-sabha', 'body:18th-uttar-pradesh-assembly'];
+function partyStats(node) {
+  // MEMBER_OF-to-party accumulates every term a person was ever recorded
+  // under this party (15th LS through 18th LS, etc), so a raw count wildly
+  // overstates "current seats" -- scope to people who ALSO currently sit
+  // in a live body (18th LS / 18th UP assembly), same rule sittingMPs() uses.
+  const currentPeople = new Set(CURRENT_BODIES.flatMap(b =>
+    nbs(b).filter(x => x.rel === 'MEMBER_OF' && x.dir === 'in').map(x => x.node.id)));
+  const members = nbs(node.id).filter(x => x.rel === 'MEMBER_OF' && x.dir === 'in' && x.node.type === 'person' && currentPeople.has(x.node.id)).map(x => x.node);
+  const mps = members.filter(p => constituencyOf(p.id)?.props?.kind !== 'assembly');
+  const mlas = members.filter(p => constituencyOf(p.id)?.props?.kind === 'assembly');
+  const withCases = members.filter(p => (p.props.affidavit?.criminal_cases || 0) > 0).length;
+  const assetsList = members.map(p => p.props.affidavit?.assets_inr).filter(v => v != null);
+  const avgAssets = assetsList.length ? assetsList.reduce((a, b) => a + b, 0) / assetsList.length : null;
+  const states = new Set(members.map(p => constituencyOf(p.id)?.props?.state).filter(Boolean));
+  return { total: members.length, mps: mps.length, mlas: mlas.length, withCases, avgAssets, states: states.size };
+}
+
+function compareRows(a, b) {
+  if (a.type === 'person' && b.type === 'person') {
+    const ca = constituencyOf(a.id), cb = constituencyOf(b.id);
+    const pa = currentParty(a.id), pb = currentParty(b.id);
+    const sa = a.props.sansad || {}, sb = b.props.sansad || {};
+    const affA = a.props.affidavit || {}, affB = b.props.affidavit || {};
+    const socialCount = n => n.props.social ? Object.entries(n.props.social).filter(([k, v]) => k !== 'source' && v).length : 0;
+    return [
+      ['Party', pa?.name || '—', pb?.name || '—'],
+      ['Constituency', ca ? `${ca.name} (${ca.props.state || ''})` : '—', cb ? `${cb.name} (${cb.props.state || ''})` : '—'],
+      ['Role', ca?.props?.kind === 'assembly' ? 'MLA' : 'MP', cb?.props?.kind === 'assembly' ? 'MLA' : 'MP'],
+      ['Terms served', sa.no_of_terms ?? '—', sb.no_of_terms ?? '—'],
+      ['Age', sa.age ?? '—', sb.age ?? '—'],
+      ['Gender', sa.gender || '—', sb.gender || '—'],
+      ['Education', affA.education || '—', affB.education || '—'],
+      ['Criminal cases (2024)', affA.criminal_cases ?? '—', affB.criminal_cases ?? '—'],
+      ['Declared assets (2024)', crore(affA.assets_inr), crore(affB.assets_inr)],
+      ['Declared assets (2019)', crore(a.props.affidavit_2019?.assets_inr), crore(b.props.affidavit_2019?.assets_inr)],
+      ['Declared assets (2014)', crore(a.props.affidavit_2014?.assets_inr), crore(b.props.affidavit_2014?.assets_inr)],
+      ['Social profiles found', socialCount(a) || '—', socialCount(b) || '—'],
+      ['News mentions', nbs(a.id).filter(x => x.rel === 'MENTIONED_IN').length || '—', nbs(b.id).filter(x => x.rel === 'MENTIONED_IN').length || '—'],
+    ];
+  }
+  if (a.type === 'party' && b.type === 'party') {
+    const sa = partyStats(a), sb = partyStats(b);
+    return [
+      ['Current seats (LS + UP assembly)', sa.total, sb.total],
+      ['Lok Sabha MPs', sa.mps, sb.mps],
+      ['State assembly MLAs', sa.mlas, sb.mlas],
+      ['Members with criminal cases', sa.withCases, sb.withCases],
+      ['Avg. declared assets', crore(sa.avgAssets), crore(sb.avgAssets)],
+      ['States with a presence', sa.states, sb.states],
+    ];
+  }
+  if (a.type === 'constituency' && b.type === 'constituency') {
+    const mpA = mpOf(a.id), mpB = mpOf(b.id);
+    // Same rule as showConstituency(): a bare name match can hit a stale WON
+    // edge from an earlier term, so always take the most recent election.
+    const latestWon = (mp, seat) => mp ? nbs(mp.id).filter(x => x.rel === 'WON' && x.dir === 'out' && x.props.votes != null
+      && resolveBase(x.props.constituency) === resolveBase(seat.name)).sort((x, y) => y.node.name.localeCompare(x.node.name))[0] : null;
+    const wonA = latestWon(mpA, a), wonB = latestWon(mpB, b);
+    return [
+      ['State', a.props.state || '—', b.props.state || '—'],
+      ['Level', a.props.kind === 'assembly' ? 'Assembly (MLA)' : 'Lok Sabha (MP)', b.props.kind === 'assembly' ? 'Assembly (MLA)' : 'Lok Sabha (MP)'],
+      ['Current representative', mpA?.name || 'Vacant', mpB?.name || 'Vacant'],
+      ['Party', mpA ? (currentParty(mpA.id)?.name || '—') : '—', mpB ? (currentParty(mpB.id)?.name || '—') : '—'],
+      ['Winning margin', num(wonA?.props?.margin), num(wonB?.props?.margin)],
+      ['Turnout', wonA?.props?.turnout ? wonA.props.turnout + '%' : '—', wonB?.props?.turnout ? wonB.props.turnout + '%' : '—'],
+    ];
+  }
+  // fallback: raw prop diff for mixed/other types
+  const keys = [...new Set([...Object.keys(a.props), ...Object.keys(b.props)])].filter(k => typeof a.props[k] !== 'object' && typeof b.props[k] !== 'object');
+  return keys.map(k => [k, a.props[k] ?? '—', b.props[k] ?? '—']);
+}
+
+function entityPickerHTML(slot, current) {
+  return `
+    <div style="flex:1;min-width:240px">
+      <input id="cpick${slot}" placeholder="Search a person, party, or seat…" value="${current ? esc(current.name) : ''}"
+             style="width:100%;padding:9px 12px;border-radius:10px;border:1px solid var(--border-2);background:var(--bg);color:var(--ink);font-size:14px">
+      <ul id="cres${slot}" style="list-style:none;margin:4px 0 0;padding:0;max-height:240px;overflow-y:auto"></ul>
+    </div>`;
+}
+
+function showCompare(id1, id2) {
+  const a = id1 ? byId.get(id1) : null;
+  const b = id2 ? byId.get(id2) : null;
+
+  setView(`
+    <h2>Compare</h2>
+    <div class="sub" style="margin-bottom:14px">Pick any two people, parties, or seats to compare side by side.</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">
+      ${entityPickerHTML(1, a)}
+      ${entityPickerHTML(2, b)}
+    </div>
+    ${a && b ? (a.type !== b.type ? `<div class="note">Pick two entities of the same type (person/person, party/party, or seat/seat) for a meaningful comparison.</div>` : `
+    <div class="tablewrap"><table class="mps">
+      <thead><tr><th></th>
+        <th><a href="#/node/${encodeURIComponent(a.id)}" style="color:var(--ink);text-decoration:none">${esc(a.name)}</a></th>
+        <th><a href="#/node/${encodeURIComponent(b.id)}" style="color:var(--ink);text-decoration:none">${esc(b.name)}</a></th>
+      </tr></thead>
+      <tbody>
+        ${compareRows(a, b).map(([label, va, vb]) => `
+          <tr><td style="color:var(--muted)">${esc(label)}</td>
+            <td class="num" style="text-align:left">${esc(va)}</td>
+            <td class="num" style="text-align:left">${esc(vb)}</td></tr>`).join('')}
+      </tbody>
+    </table></div>`) : '<div class="note">Waiting for both picks…</div>'}
+  `);
+
+  [1, 2].forEach(slot => {
+    const input = $('cpick' + slot), list = $('cres' + slot);
+    let debounceC;
+    input.addEventListener('input', () => {
+      clearTimeout(debounceC);
+      debounceC = setTimeout(() => {
+        const q = input.value.toLowerCase().trim();
+        if (!q) { list.innerHTML = ''; return; }
+        const hits = searchIndex.filter(({ n }) => ['person', 'party', 'constituency'].includes(n.type) && n.name.toLowerCase().includes(q)).slice(0, 15);
+        list.innerHTML = hits.map(({ n }) => `<li data-id="${esc(n.id)}" style="padding:7px 10px;cursor:pointer;border-radius:8px;font-size:13.5px" class="cpick-item">
+          <i class="dot" style="background:${TYPE_COLOR(n.type)}"></i> ${esc(n.name)} <span class="chip">${esc(n.type)}</span></li>`).join('');
+      }, 120);
+    });
+    list.addEventListener('click', e => {
+      const li = e.target.closest('li[data-id]'); if (!li) return;
+      const other = slot === 1 ? b : a;
+      const ids = slot === 1 ? [li.dataset.id, other?.id] : [other?.id, li.dataset.id];
+      if (ids[0] && ids[1]) {
+        // Both picked: push a real, shareable URL (triggers a route()/re-render via hashchange).
+        location.hash = `#/compare/${encodeURIComponent(ids[0])}/${encodeURIComponent(ids[1])}`;
+      } else {
+        // Only one picked so far: render in place so the first pick isn't
+        // lost (navigating to a bare '#/compare' would wipe it).
+        showCompare(ids[0], ids[1]);
+      }
+    });
+  });
 }
 
 // ---- browse views (the clickable stat tiles land here) ----
@@ -858,7 +1000,8 @@ function showDetail(node) {
   setView(`
     <h2><i class="dot" style="display:inline-block;background:${TYPE_COLOR(node.type)};width:12px;height:12px;border-radius:4px"></i>
         ${esc(node.name)}</h2>
-    <div class="sub">${esc(node.type)} · <code style="font-size:12px">${esc(node.id)}</code></div>
+    <div class="sub">${esc(node.type)} · <code style="font-size:12px">${esc(node.id)}</code>
+      ${['person', 'party', 'constituency'].includes(node.type) ? ` · <a href="#/compare/${encodeURIComponent(node.id)}" style="color:var(--accent);text-decoration:none">Compare with…</a>` : ''}</div>
     ${props ? `<div class="sub">${props}</div>` : ''}
     ${sanHtml}${socialHtml}${affHtml}${aff19Html}${aff14Html}${wealthChartHtml}${docTextHtml}${newsHtml}
     <div class="prov">source: <a href="${esc(node.source)}" target="_blank" rel="noopener">${esc(node.source)}</a>
