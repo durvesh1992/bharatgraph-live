@@ -62,33 +62,69 @@
   a { color: inherit; }
   ::selection { background: var(--accent-soft); }
 
-  header { position: sticky; top: 0; z-index: 20;
+  header { position: sticky; top: 0; z-index: 30;
            background: color-mix(in srgb, var(--bg-2) 82%, transparent);
            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
            border-bottom: 1px solid var(--border); padding: 0 28px; }
-  .hrow { display: flex; align-items: center; gap: 22px; height: 60px; max-width: 1400px; margin: 0 auto; }
+  .hrow { display: flex; align-items: center; gap: 16px; height: 60px; max-width: 1520px; margin: 0 auto; }
   .brand { font-size: 18.5px; font-weight: 700; letter-spacing: -0.02em; cursor: pointer;
            display: flex; align-items: center; gap: 9px; white-space: nowrap; flex: none; }
   .brand .mark { width: 22px; height: 22px; border-radius: 7px; flex: none;
                  background: conic-gradient(from 210deg, var(--t-person), var(--t-party), var(--t-constituency), var(--t-person)); }
-  nav { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; min-width: 0; }
-  nav::-webkit-scrollbar { display: none; }
-  nav a { flex: none; }
-  nav a { padding: 6px 14px; border-radius: 999px; color: var(--ink-2); text-decoration: none;
-          font-size: 13.5px; font-weight: 500; transition: background .15s, color .15s; }
-  nav a:hover { color: var(--ink); background: var(--bg-3); }
-  nav a.on { color: var(--ink); background: var(--bg-3); font-weight: 600; }
-  .badge { margin-left: auto; font-size: 12px; color: var(--ink-2); white-space: nowrap;
+  .hamburger { display: none; flex: none; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border);
+               background: var(--bg); color: var(--ink-2); cursor: pointer; align-items: center; justify-content: center; }
+  @media (max-width: 1023px) { .hamburger { display: flex; } }
+  .freshness { flex: none; font-size: 12px; color: var(--ink-2); white-space: nowrap;
+               display: flex; align-items: center; gap: 6px; }
+  .freshness i { width: 6px; height: 6px; border-radius: 50%; background: #1baf7a; flex: none; }
+  @media (max-width: 900px) { .freshness { display: none; } }
+  .themebtn { flex: none; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border);
+              background: var(--bg); color: var(--ink-2); cursor: pointer; display: flex; align-items: center;
+              justify-content: center; font-size: 15px; }
+  .themebtn:hover { color: var(--ink); border-color: var(--border-2); }
+  .headercta { flex: none; margin-left: auto; font-size: 13px; font-weight: 600; text-decoration: none;
+               padding: 7px 15px; border-radius: 999px; background: var(--ink); color: var(--bg);
+               white-space: nowrap; transition: opacity .15s; }
+  .headercta:hover { opacity: .85; }
+  @media (max-width: 640px) { .headercta { display: none; } }
+  .badge { font-size: 12px; color: var(--ink-2); white-space: nowrap;
            border: 1px solid var(--border); background: var(--bg); border-radius: 999px;
            padding: 5px 13px; font-variant-numeric: tabular-nums; box-shadow: var(--shadow); }
   @media (max-width: 760px) { .badge { display: none; } }
 
-  main { display: grid; grid-template-columns: 300px minmax(0,1fr); gap: 0;
-         max-width: 1400px; margin: 0 auto; min-height: calc(100vh - 61px); }
+  main { display: grid; grid-template-columns: 216px 300px minmax(0,1fr); gap: 0;
+         max-width: 1520px; margin: 0 auto; min-height: calc(100vh - 61px); }
+  @media (max-width: 1023px) { main { grid-template-columns: 300px minmax(0,1fr); } }
   @media (max-width: 860px) { main { grid-template-columns: 1fr; }
     .left { border-right: none !important; border-bottom: 1px solid var(--border); } }
   .left { border-right: 1px solid var(--border); padding: 22px 20px; }
   .right { padding: 26px 32px 48px; min-width: 0; }
+
+  /* ---- sidebar (H1: terminal shell) ---- */
+  .sidenav { border-right: 1px solid var(--border); padding: 18px 12px; display: flex; flex-direction: column; gap: 18px; }
+  @media (max-width: 1023px) {
+    .sidenav { position: fixed; top: 60px; left: 0; bottom: 0; width: 240px; background: var(--bg-2);
+               overflow-y: auto; transform: translateX(-100%); transition: transform .2s ease; z-index: 25;
+               box-shadow: var(--shadow-hover); }
+    .sidenav.open { transform: none; }
+    .sidenav-scrim { display: none; position: fixed; inset: 60px 0 0 0; background: rgba(0,0,0,.35); z-index: 24; }
+    .sidenav-scrim.open { display: block; }
+  }
+  .sidenav-group + .sidenav-group { margin-top: 2px; }
+  .sidenav-label { font-size: 10.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+                   color: var(--muted); padding: 0 10px; margin-bottom: 6px; }
+  .sidenav-link { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px;
+                  color: var(--ink-2); text-decoration: none; font-size: 13.5px; font-weight: 500;
+                  transition: background .12s, color .12s; }
+  .sidenav-link:hover { color: var(--ink); background: var(--bg-3); }
+  .sidenav-link.on { color: var(--ink); background: var(--bg-3); font-weight: 600;
+                      box-shadow: inset 2px 0 0 var(--accent); }
+  .sidenav-link .si { width: 16px; text-align: center; flex: none; opacity: .8; font-size: 13px; }
+  .sidenav-link .sb { margin-left: auto; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+                       background: var(--bg-3); color: var(--muted); }
+  .sidenav-link .sb.live { background: rgba(27,175,122,.15); color: #1baf7a; }
+  .sidenav-link .sb.ai { background: rgba(74,144,226,.15); color: var(--accent); }
+  .sidenav-link .sb.new { background: rgba(213,81,129,.15); color: #d55181; }
 
   .searchwrap { position: relative; }
   .searchwrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
@@ -247,27 +283,90 @@
   footer .frow { max-width: 1400px; margin: 0 auto; padding: 18px 28px 26px;
                  color: var(--muted); font-size: 12px; line-height: 1.7; }
   footer a { color: var(--muted); }
+
+  /* ---- H1: pricing + product landing ---- */
+  .kpirow { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 10px; margin-bottom: 22px; }
+  .kpicard { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .kpicard b { display: block; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .kpicard small { color: var(--ink-2); font-size: 12px; display: block; margin-top: 3px; line-height: 1.35; }
+  .sourcespanel { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 14px 18px; box-shadow: var(--shadow); margin-bottom: 22px; }
+  .sourcespanel .srow { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+  .sourcespanel .srow:last-child { border-bottom: none; }
+  .sourcespanel .srow .sb { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .sourcespanel .srow .sb.live { background: rgba(27,175,122,.15); color: #1baf7a; }
+  .sourcespanel .srow .sb.daily { background: rgba(237,161,0,.15); color: #eda100; }
+
+  .pricegrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap: 16px; margin: 20px 0 28px; }
+  .pricecard { background: var(--bg); border: 1px solid var(--border); border-radius: 16px; padding: 22px 20px; box-shadow: var(--shadow); position: relative; }
+  .pricecard.featured { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow); }
+  .pricecard .ribbon { position: absolute; top: -11px; left: 20px; background: var(--accent); color: #fff; font-size: 11px;
+                        font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+  .pricecard h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .pricecard .amt { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 6px 0 2px; }
+  .pricecard .amt span { font-size: 13px; font-weight: 500; color: var(--ink-2); }
+  .pricecard .pdesc { color: var(--ink-2); font-size: 13px; margin-bottom: 14px; min-height: 32px; }
+  .pricecard ul { list-style: none; padding: 0; margin: 0 0 16px; }
+  .pricecard li { font-size: 13px; color: var(--ink-2); padding: 5px 0; padding-left: 20px; position: relative; }
+  .pricecard li::before { content: "✓"; position: absolute; left: 0; color: #1baf7a; font-weight: 700; }
+  .pricebtn { display: block; text-align: center; text-decoration: none; padding: 9px; border-radius: 10px;
+              font-size: 13.5px; font-weight: 600; background: var(--bg-3); color: var(--ink); transition: background .15s; }
+  .pricecard.featured .pricebtn { background: var(--ink); color: var(--bg); }
+  .pricebtn:hover { opacity: .85; }
+  .pricefaq { max-width: 70ch; }
+  .pricefaq details { border-bottom: 1px solid var(--border); padding: 12px 0; }
+  .pricefaq summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  .pricefaq p { color: var(--ink-2); font-size: 13.5px; margin-top: 8px; line-height: 1.6; }
+
+  .landing-hero { text-align: center; padding: 40px 0 28px; max-width: 70ch; margin: 0 auto; }
+  .landing-hero h1 { font-size: 38px; font-weight: 800; letter-spacing: -0.03em; }
+  .landing-hero .sub2 { color: var(--ink-2); font-size: 16px; margin: 14px 0 22px; line-height: 1.6; }
+  .landing-hero .btnrow { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .landing-hero .btn { padding: 10px 20px; border-radius: 999px; text-decoration: none; font-weight: 600; font-size: 14px; }
+  .landing-hero .btn.primary { background: var(--ink); color: var(--bg); }
+  .landing-hero .btn.secondary { background: var(--bg-3); color: var(--ink); }
+  .usecasegrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 14px; margin: 24px 0; }
+  .usecasecard { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); }
+  .usecasecard h4 { font-size: 15px; margin-bottom: 8px; }
+  .usecasecard ul { padding-left: 18px; margin: 8px 0; }
+  .usecasecard li { font-size: 13px; color: var(--ink-2); margin: 3px 0; }
+  .usecasecard a { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 13px; }
 </style>
 </head>
 <body>
 <header>
   <div class="hrow">
+    <button class="hamburger" id="hamburger" aria-label="Open navigation" onclick="toggleSidenav()">☰</button>
     <span class="brand" onclick="location.hash='#/'"><span class="mark"></span>BharatGraph</span>
-    <nav>
-      <a href="#/" id="nav-home">Insights</a>
-      <a href="#/browse/all" id="nav-browse">All MPs</a>
-      <a href="#/geo" id="nav-geo">By State</a>
-      <a href="#/news" id="nav-news">News</a>
-      <a href="#/compare" id="nav-compare">Compare</a>
-      <a href="#/parties" id="nav-parties">Parties</a>
-      <a href="#/bills" id="nav-bills">Bills</a>
-      <a href="#/dossiers" id="nav-dossiers">Dossiers</a>
-      <a href="#/about" id="nav-about">What we're building</a>
-    </nav>
+    <span class="freshness" id="freshness"><i></i><span id="freshnessText">Loading…</span></span>
+    <button class="themebtn" id="themebtn" aria-label="Toggle dark/light theme" onclick="toggleTheme()">◐</button>
+    <a class="headercta" href="#/dossiers">Request Dossier</a>
     <span class="badge" id="badge">loading…</span>
   </div>
 </header>
+<div class="sidenav-scrim" id="sidenavScrim" onclick="toggleSidenav(false)"></div>
 <main>
+  <aside class="sidenav" id="sidenav">
+    <div class="sidenav-group">
+      <div class="sidenav-label">Intelligence</div>
+      <a href="#/" id="nav-home" class="sidenav-link"><span class="si">⌂</span>Insights</a>
+      <a href="#/war" id="nav-war" class="sidenav-link"><span class="si">◎</span>War Room</a>
+      <a href="#/dossiers" id="nav-dossiers" class="sidenav-link"><span class="si">✦</span>Dossiers<span class="sb ai">AI</span></a>
+      <a href="#/compare" id="nav-compare" class="sidenav-link"><span class="si">⇄</span>Compare</a>
+    </div>
+    <div class="sidenav-group">
+      <div class="sidenav-label">Browse</div>
+      <a href="#/browse/all" id="nav-browse" class="sidenav-link"><span class="si">◈</span>All MPs<span class="sb" id="sb-mps"></span></a>
+      <a href="#/parties" id="nav-parties" class="sidenav-link"><span class="si">◉</span>Parties</a>
+      <a href="#/bills" id="nav-bills" class="sidenav-link"><span class="si">≡</span>Bills<span class="sb" id="sb-bills"></span></a>
+      <a href="#/news" id="nav-news" class="sidenav-link"><span class="si">○</span>News<span class="sb live">Live</span></a>
+      <a href="#/geo" id="nav-geo" class="sidenav-link"><span class="si">⬡</span>Geography</a>
+    </div>
+    <div class="sidenav-group">
+      <div class="sidenav-label">Platform</div>
+      <a href="#/pricing" id="nav-pricing" class="sidenav-link"><span class="si">$</span>Pricing</a>
+      <a href="#/about" id="nav-about" class="sidenav-link"><span class="si">⊕</span>About &amp; Methodology</a>
+    </div>
+  </aside>
   <div class="left">
     <div class="searchwrap">
       <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
@@ -298,6 +397,28 @@
 <script>
 let DATA, byId, adj, searchIndex;
 const $ = id => document.getElementById(id);
+
+// ---- H1: theme toggle (dark-by-default for first-time visitors; the
+// existing [data-theme] CSS vars were already defined but never wired to
+// anything -- prefers-color-scheme was the only signal before this). ----
+(function initTheme() {
+  const saved = localStorage.getItem('bg_theme');
+  const theme = saved || 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+})();
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('bg_theme', next);
+}
+function toggleSidenav(force) {
+  const nav = $('sidenav'), scrim = $('sidenavScrim');
+  const open = force ?? !nav.classList.contains('open');
+  nav.classList.toggle('open', open);
+  scrim.classList.toggle('open', open);
+}
+window.addEventListener('hashchange', () => toggleSidenav(false));
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const TYPE_COLOR = t => getComputedStyle(document.documentElement)
   .getPropertyValue({person:'--t-person', party:'--t-party', constituency:'--t-constituency',
@@ -344,8 +465,13 @@ function init(data) {
   const typeCounts = {};
   DATA.nodes.forEach(n => typeCounts[n.type] = (typeCounts[n.type] || 0) + 1);
   $('badge').textContent = `${freshnessLabel(DATA.generated)} · ${num(DATA.nodes.length)} entities · ${num(DATA.edges.length)} relationships`;
+  $('freshnessText').textContent = freshnessLabel(DATA.generated);
   $('legend').innerHTML = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])
     .map(([ty, c]) => `<span><i class="dot" style="background:${TYPE_COLOR(ty)}"></i>${esc(ty)} · ${c}</span>`).join('');
+  const mpCount = DATA.nodes.filter(n => n.type === 'person').length;
+  const billCount = DATA.nodes.filter(n => n.type === 'document' && n.props.kind === 'bill').length;
+  if ($('sb-mps')) $('sb-mps').textContent = num(mpCount);
+  if ($('sb-bills')) $('sb-bills').textContent = num(billCount);
   route();
   // Rotating placeholder examples -- cheap discoverability nudge for the NL
   // search grammar; skipped for prefers-reduced-motion by simply not rotating.
@@ -724,7 +850,9 @@ function route() {
   const isDossiers = location.hash === '#/dossiers';
   const isBillsIndex = location.hash === '#/bills';
   const mBillDetail = location.hash.match(/^#\/bills\/(.+)$/);
-  $('nav-home').classList.toggle('on', !mNode && !mBrowse && !isGeo && !isNews && !isParties && !mCompare && !mWar && !isDossiers && !isBillsIndex && !mBillDetail && location.hash !== '#/about');
+  const isPricing = location.hash === '#/pricing';
+  const isProduct = location.hash === '#/product';
+  $('nav-home').classList.toggle('on', !mNode && !mBrowse && !isGeo && !isNews && !isParties && !mCompare && !mWar && !isDossiers && !isBillsIndex && !mBillDetail && !isPricing && !isProduct && location.hash !== '#/about');
   $('nav-about').classList.toggle('on', location.hash === '#/about');
   $('nav-browse').classList.toggle('on', !!mBrowse);
   $('nav-geo').classList.toggle('on', isGeo);
@@ -733,6 +861,8 @@ function route() {
   $('nav-compare').classList.toggle('on', !!mCompare);
   $('nav-dossiers').classList.toggle('on', isDossiers);
   $('nav-bills').classList.toggle('on', isBillsIndex || !!mBillDetail);
+  $('nav-war').classList.toggle('on', !!mWar);
+  $('nav-pricing').classList.toggle('on', isPricing);
   if (location.hash === '#/about') { $('gwrap').hidden = true; showAbout(); }
   else if (isGeo) { showGeoIndex(); }
   else if (isNews) { showNewsFeed(); }
@@ -740,6 +870,8 @@ function route() {
   else if (isDossiers) { showDossiers(); }
   else if (isBillsIndex) { showBillsIndex(); }
   else if (mBillDetail) { showBillDetail(decodeURIComponent(mBillDetail[1])); }
+  else if (isPricing) { $('gwrap').hidden = true; showPricing(); }
+  else if (isProduct) { $('gwrap').hidden = true; showProductLanding(); }
   else if (mCompare) { $('gwrap').hidden = true; showCompare(mCompare[1] && decodeURIComponent(mCompare[1]), mCompare[2] && decodeURIComponent(mCompare[2])); }
   else if (mWar) { $('gwrap').hidden = true; showWarRoom(mWar[1] && decodeURIComponent(mWar[1])); }
   else if (mBrowse) { $('gwrap').hidden = true; showBrowse(decodeURIComponent(mBrowse[1])); }
@@ -1106,6 +1238,21 @@ function showHome() {
       <a href="#/news" style="flex:none;margin-right:6px;text-decoration:none;font-size:12.5px;font-weight:600;
               color:var(--accent);white-space:nowrap;padding:5px 10px;border-radius:999px;background:var(--accent-soft)">All news →</a>
     </div>` : ''}
+    <div class="kpirow">
+      <div class="kpicard"><b>${num(DATA.nodes.length)}</b><small>Total entities — MPs, parties, seats, bills, news</small></div>
+      <div class="kpicard"><b>${num(DATA.edges.length)}</b><small>Relationships mapped in the graph</small></div>
+      <div class="kpicard"><b>${num(DATA.nodes.filter(n=>n.type==='person').length)}</b><small>MPs/MLAs with full affidavit coverage</small></div>
+      <div class="kpicard"><b>${num(DATA.nodes.filter(n=>n.type==='document'&&n.props.kind==='bill').length)}</b><small>Bills tracked, AI-tagged by sector</small></div>
+    </div>
+    <div class="eyebrow">Data sources</div>
+    <div class="sourcespanel">
+      <div class="srow"><span>ADR / MyNeta election affidavits</span><span class="sb live">Live</span></div>
+      <div class="srow"><span>Election Commission of India</span><span class="sb live">Live</span></div>
+      <div class="srow"><span>Digital Sansad official records</span><span class="sb live">Live</span></div>
+      <div class="srow"><span>PRS Legislative Research (bills)</span><span class="sb daily">Daily</span></div>
+      <div class="srow"><span>Wikidata (social profiles)</span><span class="sb live">Live</span></div>
+      <div class="srow"><span>Live news — 4 outlets</span><span class="sb live">Live</span></div>
+    </div>
     <div class="quickfilters">${quickFilters.map(([href, label]) =>
       `<a href="${href}">${esc(label)}</a>`).join('')}</div>
     <h2>The 18th Lok Sabha, by the numbers</h2>
@@ -1484,6 +1631,90 @@ function showBillDetail(slug) {
       <a href="${esc(p.prs_url || '#')}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">View on PRS India →</a>
       ${p.bill_text_url ? `<br><a href="${esc(p.bill_text_url)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">Bill text (PDF) →</a>` : ''}
     </div>`);
+}
+
+// ---- H1: pricing (founder-confirmed 2026-07-11: ₹4,999 / ₹24,999 / ₹75,000+) ----
+function showPricing() {
+  $('gwrap').hidden = true;
+  const tiers = [
+    { name: 'Public', amt: '₹0', period: '', desc: 'The whole graph, browsable, forever.', featured: false,
+      features: ['Every MP, party, seat, bill — searchable', 'War room, compare, NL search', 'Basic CSV exports'], cta: 'Already free — explore →', href: '#/' },
+    { name: 'Starter', amt: '₹4,999', period: '/mo', desc: 'For independent analysts & journalists.', featured: false,
+      features: ['Everything in Public', 'Saved watchlists', 'Weekly email digest', 'Full CSV exports', '100 API calls/day'], cta: 'Start pilot — 14 days free', href: '#/dossiers' },
+    { name: 'Professional', amt: '₹24,999', period: '/mo', desc: 'For consultancies & GR/public-affairs teams.', featured: true,
+      features: ['Everything in Starter', 'Sector alerts (policy risk)', '10 AI dossiers/mo', '10,000 API calls/day', 'Priority email support'], cta: 'Start pilot — 14 days free', href: '#/dossiers' },
+    { name: 'Enterprise', amt: '₹75,000+', period: '/mo', desc: 'For parties, large corporates, compliance teams.', featured: false,
+      features: ['Everything in Professional', 'Unlimited API calls', 'Custom reports', 'Dedicated onboarding'], cta: 'Request pricing', href: '#/dossiers' },
+  ];
+  setView(`
+    <h2>Simple, transparent pricing</h2>
+    <div class="sub" style="margin-bottom:4px">Built for political consultancies, corporate public affairs teams, and media organizations.
+      Annual billing = 2 months free on any paid tier.</div>
+    <div class="pricegrid">
+      ${tiers.map(t => `
+        <div class="pricecard${t.featured ? ' featured' : ''}">
+          ${t.featured ? '<div class="ribbon">Most popular</div>' : ''}
+          <h3>${esc(t.name)}</h3>
+          <div class="amt">${esc(t.amt)}<span>${esc(t.period)}</span></div>
+          <div class="pdesc">${esc(t.desc)}</div>
+          <ul>${t.features.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
+          <a class="pricebtn" href="${t.href}">${esc(t.cta)}</a>
+        </div>`).join('')}
+    </div>
+    <div class="eyebrow">Questions</div>
+    <div class="pricefaq">
+      <details><summary>What data sources power this?</summary><p>ADR/MyNeta election affidavits, the Election Commission of India, Digital Sansad official records, PRS Legislative Research (bills), Wikidata, and 4 live news outlets — every fact links to its source. See <a href="#/about" style="color:var(--accent)">What we're building</a>.</p></details>
+      <details><summary>How fresh is the data?</summary><p>The graph refreshes daily via an automated job. The "Updated" indicator in the header always shows the real last-refresh time — never a hand-typed claim.</p></details>
+      <details><summary>What stays free?</summary><p>Every entity, every page, full search, compare, and the war room stay public and free, permanently — that's also how we're found by the people who end up paying for the deeper layer (alerts, exports, API).</p></details>
+      <details><summary>Can I cancel anytime?</summary><p>Yes — no lock-in contracts on Starter or Professional. Enterprise terms are agreed individually.</p></details>
+      <details><summary>Who builds this?</summary><p>An independently built, source-cited political knowledge graph — see <a href="#/about" style="color:var(--accent)">About</a> for the full story and our <a href="https://github.com/durvesh1992/bharatgraph-live" target="_blank" rel="noopener" style="color:var(--accent)">public snapshot repo</a>.</p></details>
+    </div>`);
+}
+
+// ---- H1: marketing landing (outbound links point here; the app itself
+// stays the data-forward Insights dashboard at #/) ----
+function showProductLanding() {
+  $('gwrap').hidden = true;
+  const t = DATA.insights.totals;
+  setView(`
+    <div class="landing-hero">
+      <h1>India's political knowledge graph.</h1>
+      <div class="sub2">${num(DATA.nodes.length)} entities and ${num(DATA.edges.length)} relationships —
+        MPs, parties, bills, constituencies, and news — connected, entity-resolved, and traceable to a public
+        source on every fact. Built for campaign war rooms, corporate public affairs, and newsrooms.</div>
+      <div class="btnrow">
+        <a class="btn primary" href="#/">Explore the terminal →</a>
+        <a class="btn secondary" href="#/pricing">See pricing</a>
+      </div>
+    </div>
+    <div class="usecasegrid">
+      <div class="usecasecard">
+        <h4>🗳️ Campaign war rooms</h4>
+        <ul><li>Constituency margins &amp; seat history</li><li>Incumbent affidavit records</li><li>Defection &amp; party-switch tracking</li></ul>
+        <a href="#/war">Open a war room →</a>
+      </div>
+      <div class="usecasecard">
+        <h4>🏢 Corporate public affairs</h4>
+        <ul><li>${num(DATA.nodes.filter(n=>n.type==='document'&&n.props.kind==='bill').length)} bills tracked, AI-tagged by sector</li><li>Daily-refreshed status changes</li><li>Every AI-derived field clearly labeled</li></ul>
+        <a href="#/bills">Track your sector →</a>
+      </div>
+      <div class="usecasecard">
+        <h4>📰 Media &amp; researchers</h4>
+        <ul><li>Every fact sourced &amp; linked</li><li>CSV export everywhere</li><li>Side-by-side compare tool</li></ul>
+        <a href="#/browse/all">Browse the data →</a>
+      </div>
+    </div>
+    <div class="eyebrow">Built on public, verifiable sources</div>
+    <div class="sourcespanel">
+      <div class="srow"><span>ADR / MyNeta election affidavits</span><span class="sb live">Live</span></div>
+      <div class="srow"><span>Election Commission of India</span><span class="sb live">Live</span></div>
+      <div class="srow"><span>Digital Sansad official records</span><span class="sb live">Live</span></div>
+      <div class="srow"><span>PRS Legislative Research (bills)</span><span class="sb daily">Daily</span></div>
+      <div class="srow"><span>Wikidata (social profiles)</span><span class="sb live">Live</span></div>
+      <div class="srow"><span>Live news — 4 outlets</span><span class="sb live">Live</span></div>
+    </div>
+    <div class="sub">No fabricated claims, no invented customers — every number above is computed from the live
+      graph at page-load, not typed by hand. <a href="#/about" style="color:var(--accent);text-decoration:none">How it's built →</a></div>`);
 }
 
 // ---- about / investor page ----
