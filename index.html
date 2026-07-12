@@ -74,10 +74,6 @@
   .hamburger { display: none; flex: none; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border);
                background: var(--bg); color: var(--ink-2); cursor: pointer; align-items: center; justify-content: center; }
   @media (max-width: 1023px) { .hamburger { display: flex; } }
-  .freshness { flex: none; font-size: 12px; color: var(--ink-2); white-space: nowrap;
-               display: flex; align-items: center; gap: 6px; }
-  .freshness i { width: 6px; height: 6px; border-radius: 50%; background: #1baf7a; flex: none; }
-  @media (max-width: 900px) { .freshness { display: none; } }
   .themebtn { flex: none; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border);
               background: var(--bg); color: var(--ink-2); cursor: pointer; display: flex; align-items: center;
               justify-content: center; font-size: 15px; }
@@ -98,6 +94,12 @@
   @media (max-width: 860px) { main { grid-template-columns: 1fr; }
     .left { border-right: none !important; border-bottom: 1px solid var(--border); } }
   .left { border-right: 1px solid var(--border); padding: 22px 20px; }
+  /* D0-4: marketing routes (no search rail -- a stranger reading copy, not
+     an app user searching the graph) keep the sidenav (real product evidence)
+     but drop the .left search column entirely. */
+  body.no-rail main { grid-template-columns: 216px minmax(0,1fr); }
+  @media (max-width: 1023px) { body.no-rail main { grid-template-columns: minmax(0,1fr); } }
+  body.no-rail .left { display: none; }
   .right { padding: 26px 32px 48px; min-width: 0; }
 
   /* ---- sidebar (H1: terminal shell) ---- */
@@ -147,9 +149,6 @@
   #results li:hover, #results li:focus-visible { background: var(--bg-3); outline: none; }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   .chip { font-size: 11.5px; color: var(--ink-2); margin-left: auto; white-space: nowrap; }
-  .legend { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);
-            display: flex; flex-wrap: wrap; gap: 7px 15px; font-size: 12px; color: var(--ink-2); }
-  .legend span { display: inline-flex; align-items: center; gap: 6px; }
 
   /* view transition */
   @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
@@ -289,6 +288,8 @@
   .kpicard { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); }
   .kpicard b { display: block; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
   .kpicard small { color: var(--ink-2); font-size: 12px; display: block; margin-top: 3px; line-height: 1.35; }
+  .graphmix { font-size: 12.5px; color: var(--muted); margin: -8px 0 22px; }
+  .graphmix b { color: var(--ink-2); font-weight: 600; }
   .sourcespanel { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 14px 18px; box-shadow: var(--shadow); margin-bottom: 22px; }
   .sourcespanel .srow { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
   .sourcespanel .srow:last-child { border-bottom: none; }
@@ -296,7 +297,9 @@
   .sourcespanel .srow .sb.live { background: rgba(27,175,122,.15); color: #1baf7a; }
   .sourcespanel .srow .sb.daily { background: rgba(237,161,0,.15); color: #eda100; }
 
-  .pricegrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap: 16px; margin: 20px 0 28px; }
+  .pricegrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 20px 0 28px; }
+  @media (max-width: 1100px) { .pricegrid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 640px) { .pricegrid { grid-template-columns: 1fr; } }
   .pricecard { background: var(--bg); border: 1px solid var(--border); border-radius: 16px; padding: 22px 20px; box-shadow: var(--shadow); position: relative; }
   .pricecard.featured { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow); }
   .pricecard .ribbon { position: absolute; top: -11px; left: 20px; background: var(--accent); color: #fff; font-size: 11px;
@@ -396,9 +399,8 @@
   <div class="hrow">
     <button class="hamburger" id="hamburger" aria-label="Open navigation" onclick="toggleSidenav()">☰</button>
     <span class="brand" onclick="location.hash='#/'"><span class="mark"></span>BharatGraph</span>
-    <span class="freshness" id="freshness"><i></i><span id="freshnessText">Loading…</span></span>
     <button class="themebtn" id="themebtn" aria-label="Toggle dark/light theme" onclick="toggleTheme()">◐</button>
-    <a class="headercta" href="#/dossiers">Request Dossier</a>
+    <a class="headercta" href="#" onclick="openLeadModal({context:'header'});return false">Start free pilot</a>
     <span class="badge" id="badge">loading…</span>
   </div>
 </header>
@@ -436,7 +438,6 @@
     <div class="fchips" id="fchips"></div>
     <div id="nlanswer"></div>
     <ul id="results"></ul>
-    <div class="legend" id="legend"></div>
   </div>
   <div class="right">
     <div id="entity" class="view"></div>
@@ -629,12 +630,7 @@ function init(data) {
   }
   searchIndex = DATA.nodes.map(n => ({ n, hay: (n.name + ' ' + (n.props.aliases || []).join(' ') + ' '
     + (n.type === 'document' ? (n.props.text || '') : '')).toLowerCase() }));
-  const typeCounts = {};
-  DATA.nodes.forEach(n => typeCounts[n.type] = (typeCounts[n.type] || 0) + 1);
   $('badge').textContent = `${freshnessLabel(DATA.generated)} · ${num(DATA.nodes.length)} entities · ${num(DATA.edges.length)} relationships`;
-  $('freshnessText').textContent = freshnessLabel(DATA.generated);
-  $('legend').innerHTML = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])
-    .map(([ty, c]) => `<span><i class="dot" style="background:${TYPE_COLOR(ty)}"></i>${esc(ty)} · ${c}</span>`).join('');
   const mpCount = DATA.nodes.filter(n => n.type === 'person').length;
   const billCount = DATA.nodes.filter(n => n.type === 'document' && n.props.kind === 'bill').length;
   if ($('sb-mps')) $('sb-mps').textContent = num(mpCount);
@@ -1046,6 +1042,7 @@ function route() {
   const mRisk = location.hash.match(/^#\/risk(?:\/(.+))?$/);
   const isChanges = location.hash === '#/changes';
   const isPrivacy = location.hash === '#/privacy';
+  document.body.classList.toggle('no-rail', isProduct || isPricing || isPrivacy);
   $('nav-home').classList.toggle('on', !mNode && !mBrowse && !isGeo && !isNews && !isParties && !mCompare && !mWar && !isDossiers && !isBillsIndex && !mBillDetail && !isPricing && !isProduct && !mRisk && !isChanges && !isPrivacy && location.hash !== '#/about');
   $('nav-about').classList.toggle('on', location.hash === '#/about');
   $('nav-browse').classList.toggle('on', !!mBrowse);
@@ -1424,7 +1421,7 @@ function showHome() {
       <h1>India's political<br>knowledge graph<span class="accent">.</span></h1>
       <div class="hero-sub">Every MP, MLA, party, seat, and election result since 2009 — <b>${num(DATA.nodes.length)} entities</b>
         and <b>${num(DATA.edges.length)} relationships</b>, entity-resolved and traceable to a primary source on every fact.
-        Search on the left, click any card — everything opens. <a href="#/about" style="color:var(--accent);text-decoration:none;font-weight:500">What we're building →</a></div>
+        <a href="#/about" style="color:var(--accent);text-decoration:none;font-weight:500">What we're building →</a></div>
       <div class="sources"><b>Sourced from</b> ADR / MyNeta · Digital Sansad · Election Commission · Wikipedia · Wikidata · Live news (4 outlets)</div>
     </div>
     ${recentNews.length ? `
@@ -1447,6 +1444,21 @@ function showHome() {
       <div class="kpicard"><b>${num(DATA.nodes.filter(n=>n.type==='person').length)}</b><small>MPs/MLAs with full affidavit coverage</small></div>
       <div class="kpicard"><b>${num(DATA.nodes.filter(n=>n.type==='document'&&n.props.kind==='bill').length)}</b><small>Bills tracked, AI-tagged by sector</small></div>
     </div>
+    ${(() => {
+      const billCount = DATA.nodes.filter(n => n.type === 'document' && n.props.kind === 'bill').length;
+      const docCount = DATA.nodes.filter(n => n.type === 'document').length;
+      const mix = [
+        ['politicians', DATA.nodes.filter(n => n.type === 'person').length],
+        ['bills', billCount],
+        ['constituencies', DATA.nodes.filter(n => n.type === 'constituency').length],
+        ['parties', DATA.nodes.filter(n => n.type === 'party').length],
+        ['states', DATA.nodes.filter(n => n.type === 'state').length],
+        ['news & records', docCount - billCount],
+      ];
+      return `<div class="graphmix">Inside the graph: ${mix.map(([label, n]) => `<b>${num(n)}</b> ${esc(label)}`).join(' · ')}</div>`;
+    })()}
+    <div class="quickfilters">${quickFilters.map(([href, label]) =>
+      `<a href="${href}">${esc(label)}</a>`).join('')}</div>
     <div class="eyebrow">Data sources</div>
     <div class="sourcespanel">
       <div class="srow"><span>ADR / MyNeta election affidavits</span><span class="sb live">Live</span></div>
@@ -1456,8 +1468,6 @@ function showHome() {
       <div class="srow"><span>Wikidata (social profiles)</span><span class="sb live">Live</span></div>
       <div class="srow"><span>Live news — 4 outlets</span><span class="sb live">Live</span></div>
     </div>
-    <div class="quickfilters">${quickFilters.map(([href, label]) =>
-      `<a href="${href}">${esc(label)}</a>`).join('')}</div>
     <h2>The 18th Lok Sabha, by the numbers</h2>
     <div class="sub" style="margin-bottom:16px">From election affidavits (ADR), official Digital Sansad records and constituency-wise results. Every number links to the people behind it.</div>
     <div class="tiles">
@@ -2215,7 +2225,7 @@ function showAbout() {
     <div class="tiles">
       <a class="tile" href="#/browse/all"><b>${num(DATA.nodes.length)}</b><small>Entities</small></a>
       <a class="tile" href="#/"><b>${num(DATA.edges.length)}</b><small>Relationships</small></a>
-      <a class="tile" href="#/"><b>3</b><small>Independent sources, cross-validated</small></a>
+      <a class="tile" href="#/"><b>3 sources</b><small>Independent, cross-validated</small></a>
       <a class="tile" href="#/"><b>100%</b><small>Facts with source links</small></a>
     </div>
     <ul>
