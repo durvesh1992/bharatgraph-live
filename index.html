@@ -1795,10 +1795,28 @@ function showBillsIndex() {
       <select id="bfministry"><option value="">All ministries</option>${ministries.map(m => `<option>${esc(m)}</option>`).join('')}</select>
       <span class="chip" id="bfcount"></span>
     </div>
-    <div class="tablecard"><div class="tablewrap"><table class="mps"><thead><tr>
+    <div class="tablecard"><div class="tablewrap"><table class="mps" style="table-layout:fixed">
+      <colgroup><col style="width:36%"><col style="width:14%"><col style="width:17%"><col style="width:23%"><col style="width:10%"></colgroup>
+      <thead><tr>
       <th>Title</th><th>Ministry</th><th>Status</th><th>Sectors</th><th>Introduced</th>
     </tr></thead><tbody id="btbody"></tbody></table></div></div>`);
 
+  // D0-9: default to whatever recently MOVED, not whatever was introduced most
+  // recently -- a bill that was introduced in 2006 and just got its first
+  // status update this week is more interesting than a 2026 bill sitting
+  // untouched in "Introduced". Same field #/risk's "recent movement" panel
+  // already uses. Falls back to introduced_date for bills with no history yet.
+  const latestActivity = b => {
+    const h = b.props.status_history;
+    return (h && h.length ? Date.parse(h[h.length - 1].date) : null) || Date.parse(b.props.introduced_date) || 0;
+  };
+  // A batch of very-recently-INTRODUCED constitutional/administrative bills
+  // (genuinely non-industry, correctly untagged) otherwise dominates pure
+  // recency and buries the sector tagging this page exists to showcase.
+  // Tagged bills lead, most-recently-active first within each group -- no
+  // bill is hidden or filtered, just ordered; untagged bills remain fully
+  // visible and reachable via search/filters, same total count either way.
+  const hasSectors = b => (b.props.sectors || []).length > 0;
   const render = () => {
     const qt = ($('bqtext').value || '').toLowerCase().trim();
     const fs = $('bfsector').value, fst = $('bfstatus').value, fm = $('bfministry').value;
@@ -1807,13 +1825,13 @@ function showBillsIndex() {
       (!fs || (b.props.sectors || []).includes(fs)) &&
       (!fst || b.props.status === fst) &&
       (!fm || b.props.ministry === fm)
-    ).sort((a, b) => (Date.parse(b.props.introduced_date) || 0) - (Date.parse(a.props.introduced_date) || 0));
+    ).sort((a, b) => (hasSectors(b) - hasSectors(a)) || (latestActivity(b) - latestActivity(a)));
     $('bfcount').textContent = `${shown.length} shown`;
     $('btbody').innerHTML = shown.map(b => `
       <tr data-go="${esc(billHref(b))}"><td><b>${esc(b.name)}</b></td>
         <td>${esc(b.props.ministry || '—')}</td>
-        <td><span class="chip" style="color:${billStatusColor(b.props.status)}">${esc(b.props.status || 'Unknown')}${b.props.status_house ? ' · ' + esc(b.props.status_house) : ''}</span></td>
-        <td>${(b.props.sectors || []).map(s => `<span class="chip">${esc(billSectorLabel(s))}</span>`).join(' ') || '—'}</td>
+        <td><span class="chip" style="color:${billStatusColor(b.props.status)};white-space:normal;display:inline-block">${esc(b.props.status || 'Unknown')}${b.props.status_house ? ' · ' + esc(b.props.status_house) : ''}</span></td>
+        <td>${(b.props.sectors || []).map(s => `<span class="chip">${esc(billSectorLabel(s))}</span>`).join(' ') || '<span class="sub" style="font-size:11.5px">No sector match</span>'}</td>
         <td>${esc(b.props.introduced_date || '—')}</td></tr>`).join('') ||
       `<tr><td colspan="5"><div class="note">No bills match this filter.</div></td></tr>`;
   };
