@@ -2818,12 +2818,29 @@ function showWarRoom(seatId) {
 }
 
 function showWarRoomPicker() {
+  // D0-6: a no-typing visitor needs something to click -- H1 originally spec'd
+  // example seat chips here and they never shipped. Mix 2-3 real closest-margin
+  // contests (genuinely dramatic, from the same insights the home page shows)
+  // with 2-3 marquee named seats, resolved to real constituency node ids;
+  // gracefully skip any name that doesn't resolve rather than guessing.
+  const findSeat = (name, state) => DATA.nodes.find(n => n.type === 'constituency'
+    && n.name.toLowerCase() === name.toLowerCase() && (!state || n.props.state === state));
+  const closestChips = (DATA.insights.closest_contests || []).slice(0, 3)
+    .map(r => { const seat = findSeat(r.constituency, r.state); return seat ? { id: seat.id, label: `${r.constituency} — decided by ${num(r.margin)} votes` } : null; })
+    .filter(Boolean);
+  const marqueeChips = ['Varanasi', 'Rae Bareli', 'Wayanad'].map(name => { const seat = findSeat(name); return seat ? { id: seat.id, label: name } : null; }).filter(Boolean);
+  const exampleChips = [...closestChips, ...marqueeChips].slice(0, 6);
+
   setView(`
     <h2>War room</h2>
-    <div class="sub" style="margin-bottom:16px">Search a Lok Sabha or assembly constituency to open its war room.</div>
+    <div class="sub" style="margin-bottom:6px">Search a Lok Sabha or assembly constituency to open its war room —
+      2024 result &amp; margin, seat history since 2009, incumbent affidavit record, party-switch flags.</div>
     <input id="warpick" placeholder="Search a seat…"
            style="width:100%;max-width:420px;padding:9px 12px;border-radius:10px;border:1px solid var(--border-2);background:var(--bg);color:var(--ink);font-size:14px">
     <ul id="warres" style="list-style:none;margin:8px 0 0;padding:0;max-width:420px"></ul>
+    ${exampleChips.length ? `
+    <div class="sub" style="margin:18px 0 8px">Or try one of these:</div>
+    <div class="quickfilters">${exampleChips.map(c => `<a href="#/war/${encodeURIComponent(c.id)}">${esc(c.label)}</a>`).join('')}</div>` : ''}
   `);
   const input = $('warpick'), list = $('warres');
   let debounceW;
