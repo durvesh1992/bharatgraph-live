@@ -1999,9 +1999,23 @@ function showRiskMonitor(routeParam) {
   $('gwrap').hidden = true;
   const allSectors = Object.keys(BILL_SECTOR_SYNONYMS);
   const bills = allBills();
+  const neverChosen = localStorage.getItem('bg_sectors') === null; // null = true cold visit; "[]" = deliberately cleared
   let selected = routeParam ? routeParam.split(',').filter(s => allSectors.includes(s)) : riskSelectedSectors();
 
   const countFor = s => bills.filter(b => (b.props.sectors || []).includes(s)).length;
+
+  // D0-1: a cold visitor (never picked, no route param) gets the highest-count
+  // sector as a live demo instead of an empty page -- the self-demo rule (H0
+  // job 2: "the free site must produce the 'I need this' moment in under 60
+  // seconds, unassisted"). Never persisted -- a real click still does that
+  // (riskSaveSectors below). The empty `.note` state below is reserved for
+  // someone who deliberately cleared their own selection.
+  let isDemo = false;
+  if (!selected.length && !routeParam && neverChosen) {
+    const demoSector = allSectors.reduce((best, s) => countFor(s) > countFor(best) ? s : best, allSectors[0]);
+    selected = [demoSector];
+    isDemo = true;
+  }
 
   const pickerHTML = `
     <h2>Policy Risk Monitor</h2>
@@ -2049,7 +2063,12 @@ function showRiskMonitor(routeParam) {
   const bannerDismissed = localStorage.getItem('bg_risk_banner_dismissed') === '1';
 
   setView(pickerHTML + `
-    <div class="kpirow" style="margin-top:18px">
+    ${isDemo ? `
+    <div class="digestbanner" id="demoBanner" style="margin-top:18px">
+      <span>Showing <b>${esc(billSectorLabel(selected[0]))}</b> as an example — pick your sectors above; your selection stays on this device.</span>
+      <button class="x" id="demoBannerX" aria-label="Dismiss">✕</button>
+    </div>` : ''}
+    <div class="kpirow" style="margin-top:${isDemo ? '10' : '18'}px">
       <div class="kpicard"><b>${sectorBills.length}</b><small>Bills in your sectors</small></div>
       <div class="kpicard"><b>${movingCount}</b><small>Still moving (non-terminal status)</small></div>
       <div class="kpicard"><b>${highImpact}</b><small>High impact (AI-tagged — verify before acting)</small></div>
@@ -2103,6 +2122,7 @@ function showRiskMonitor(routeParam) {
   });
   if ($('digestBannerX')) $('digestBannerX').onclick = () => { localStorage.setItem('bg_risk_banner_dismissed', '1'); $('digestBanner').remove(); };
   if ($('digestBannerCTA')) $('digestBannerCTA').onclick = e => { e.preventDefault(); openLeadModal({ context: 'risk-digest', sectors: selected }); };
+  if ($('demoBannerX')) $('demoBannerX').onclick = () => $('demoBanner').remove();
 
   const currentShown = () => sectorBills.filter(b => {
     if (ministryFilter && b.props.ministry !== ministryFilter) return false;
