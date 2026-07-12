@@ -101,19 +101,10 @@
            padding: 5px 13px; font-variant-numeric: tabular-nums; box-shadow: var(--shadow); }
   @media (max-width: 760px) { .badge { display: none; } }
 
-  main { display: grid; grid-template-columns: 216px 300px minmax(0,1fr); gap: 0;
+  main { display: grid; grid-template-columns: 216px minmax(0,1fr); gap: 0;
          max-width: 1520px; margin: 0 auto; min-height: calc(100vh - 61px); }
-  @media (max-width: 1023px) { main { grid-template-columns: 300px minmax(0,1fr); } }
-  @media (max-width: 860px) { main { grid-template-columns: 1fr; }
-    .left { border-right: none !important; border-bottom: 1px solid var(--border); } }
-  .left { border-right: 1px solid var(--border); padding: 22px 20px; }
-  /* D0-4: marketing routes (no search rail -- a stranger reading copy, not
-     an app user searching the graph) keep the sidenav (real product evidence)
-     but drop the .left search column entirely. */
-  body.no-rail main { grid-template-columns: 216px minmax(0,1fr); }
-  @media (max-width: 1023px) { body.no-rail main { grid-template-columns: minmax(0,1fr); } }
-  body.no-rail .left { display: none; }
-  .right { padding: 26px 32px 48px; min-width: 0; }
+  @media (max-width: 1023px) { main { grid-template-columns: minmax(0,1fr); } }
+  .content { padding: 22px 32px 48px; min-width: 0; }
 
   /* ---- sidebar (H1: terminal shell) ---- */
   .sidenav { border-right: 1px solid var(--border); padding: 18px 12px; display: flex; flex-direction: column; gap: 18px; }
@@ -141,7 +132,16 @@
   .sidenav-link .sb.ai { background: rgba(74,144,226,.15); color: var(--accent); }
   .sidenav-link .sb.new { background: rgba(213,81,129,.15); color: #d55181; }
 
-  .searchwrap { position: relative; }
+  /* Global search: a horizontal bar at the top of the content column (was a
+     persistent 300px left rail -- ate a third of the screen on every route
+     and looked like app chrome, not a page). Results + NL answer now float
+     as a dropdown under the input instead of occupying permanent width. */
+  .searchbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start;
+               position: relative; margin-bottom: 22px; }
+  /* the pure marketing landing (#/product) is a stranger's front door, not an
+     app screen -- graph search doesn't belong above a sales pitch hero. */
+  body.no-search .searchbar { display: none; }
+  .searchwrap { position: relative; flex: 1 1 340px; min-width: 220px; }
   .searchwrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
                     width: 15px; height: 15px; stroke: var(--muted); fill: none; stroke-width: 2; }
   #q { width: 100%; padding: 11px 12px 11px 34px; font-size: 14.5px; border-radius: 12px;
@@ -149,13 +149,18 @@
        outline: none; box-shadow: var(--shadow); transition: box-shadow .15s, border-color .15s; }
   #q::placeholder { color: var(--muted); }
   #q:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  .fchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .fchips { flex: none; display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; }
   .fchips button { border: 1px solid var(--border); background: var(--bg); color: var(--ink-2);
                    border-radius: 999px; padding: 4px 12px; font-size: 12.5px; cursor: pointer;
                    font-weight: 500; transition: all .15s; }
   .fchips button:hover { border-color: var(--border-2); color: var(--ink); transform: translateY(-1px); }
   .fchips button.on { border-color: var(--ink); background: var(--ink); color: var(--bg); font-weight: 600; }
-  #results { list-style: none; padding: 0; margin-top: 12px; }
+  .searchdropdown { display: none; position: absolute; top: 100%; left: 0; right: 0; margin-top: 8px;
+                     background: var(--bg); border: 1px solid var(--border-2); border-radius: 14px;
+                     box-shadow: var(--shadow-hover); max-height: 65vh; overflow-y: auto;
+                     padding: 8px; z-index: 20; }
+  .searchdropdown.open { display: block; }
+  #results { list-style: none; padding: 0; }
   #results li { padding: 8px 11px; border-radius: 10px; cursor: pointer;
                 display: flex; align-items: center; gap: 9px; font-size: 14px;
                 transition: background .12s; }
@@ -443,16 +448,18 @@
       <a href="#/about" id="nav-about" class="sidenav-link"><span class="si">⊕</span>About &amp; Methodology</a>
     </div>
   </aside>
-  <div class="left">
-    <div class="searchwrap">
-      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
-      <input id="q" type="search" placeholder="Search anything political…" autocomplete="off" aria-label="Search the graph">
+  <div class="content">
+    <div class="searchbar">
+      <div class="searchwrap">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+        <input id="q" type="search" placeholder="Search anything political…" autocomplete="off" aria-label="Search the graph">
+        <div class="searchdropdown" id="searchDropdown">
+          <div id="nlanswer"></div>
+          <ul id="results"></ul>
+        </div>
+      </div>
+      <div class="fchips" id="fchips"></div>
     </div>
-    <div class="fchips" id="fchips"></div>
-    <div id="nlanswer"></div>
-    <ul id="results"></ul>
-  </div>
-  <div class="right">
     <div id="entity" class="view"></div>
     <div id="gwrap" hidden>
       <canvas id="graph"></canvas>
@@ -1014,9 +1021,11 @@ function initChips() {
 }
 let debounce;
 $('q').addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(doSearch, 120); });
+function closeSearchDropdown() { $('searchDropdown').classList.remove('open'); }
 function doSearch() {
   const q = $('q').value.toLowerCase().trim();
-  if (!q) { $('results').innerHTML = ''; $('nlanswer').innerHTML = ''; return; }
+  if (!q) { $('results').innerHTML = ''; $('nlanswer').innerHTML = ''; closeSearchDropdown(); return; }
+  $('searchDropdown').classList.add('open');
   let nl = null;
   try { nl = nlAnswer(q); } catch (e) { nl = null; } // never let a grammar bug break plain search
   $('nlanswer').innerHTML = nl ? nl.html : '';
@@ -1033,6 +1042,10 @@ function doSearch() {
     '<li style="color:var(--muted)">No matches</li>';
 }
 $('results').addEventListener('click', e => { const li = e.target.closest('li[data-go]'); if (li) go(li.dataset.go); });
+document.addEventListener('click', e => { if (!e.target.closest('.searchwrap')) closeSearchDropdown(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSearchDropdown(); });
+window.addEventListener('hashchange', closeSearchDropdown);
+$('q').addEventListener('focus', () => { if ($('q').value.trim()) $('searchDropdown').classList.add('open'); });
 $('results').addEventListener('keydown', e => { if (e.key === 'Enter') { const li = e.target.closest('li[data-go]'); if (li) go(li.dataset.go); } });
 
 // ---- routing ----
@@ -1055,7 +1068,7 @@ function route() {
   const mRisk = location.hash.match(/^#\/risk(?:\/(.+))?$/);
   const isChanges = location.hash === '#/changes';
   const isPrivacy = location.hash === '#/privacy';
-  document.body.classList.toggle('no-rail', isProduct || isPricing || isPrivacy);
+  document.body.classList.toggle('no-search', isProduct);
   $('nav-home').classList.toggle('on', !mNode && !mBrowse && !isGeo && !isNews && !isParties && !mCompare && !mWar && !isDossiers && !isBillsIndex && !mBillDetail && !isPricing && !isProduct && !mRisk && !isChanges && !isPrivacy && location.hash !== '#/about');
   $('nav-about').classList.toggle('on', location.hash === '#/about');
   $('nav-browse').classList.toggle('on', !!mBrowse);
