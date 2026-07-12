@@ -2248,19 +2248,75 @@ function showChangesFeed() {
     </div>
     <div id="changesList"></div>`);
 
+  // D0-8: this feed is the free preview of the paid digest -- it must read
+  // like a briefing, not `tail -f`. Group consecutive same-entity+same-kind
+  // rows (a chatty entity with 5 separate 1-mention rows reads like a log;
+  // one row with a real total reads like an item), and bucket the remainder
+  // under day headers. Never trust the persisted `summary` string's own
+  // pluralization for a GROUPED count -- it was written for a single event
+  // (new_news_mention's "(s)" is exactly this bug) -- regenerate from parts.
+  const dayLabel = iso => {
+    const d = new Date(Date.parse(iso)); d.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const days = Math.round((today - d) / 86400000);
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long' });
+  };
+  const groupSummary = (group) => {
+    const latest = group[0];
+    // new_news_mention's persisted summary has a standing "(s)" pluralization
+    // bug at the SOURCE (diffs.py's Python f-string never varied on count) --
+    // regenerate from parts unconditionally here, not just when grouping
+    // combines multiple events, so every row (grouped or not) reads correctly
+    // regardless of what's already sitting in the changes table.
+    if (latest.kind === 'new_news_mention') {
+      const name = byId.get(latest.node_id)?.name || latest.summary.split(':')[0];
+      const total = group.reduce((sum, c) => sum + ((c.detail?.after ?? 0) - (c.detail?.before ?? 0)), 0);
+      return `${name}: ${total} new news mention${total === 1 ? '' : 's'}`;
+    }
+    if (group.length === 1) return latest.summary;
+    return `${latest.summary} (+${group.length - 1} more ${(CHANGE_KIND_LABELS[latest.kind] || latest.kind).toLowerCase()} for this entity)`;
+  };
   const render = () => {
     const kf = $('fchangekind').value;
     const shown = recent.filter(c => !kf || c.kind === kf);
     $('fchangecount').textContent = `${shown.length} shown`;
-    $('changesList').innerHTML = shown.length ? shown.map(c => `
+    if (!shown.length) { $('changesList').innerHTML = '<div class="note">No changes of this type in the last 14 days.</div>'; return; }
+
+    // Group ALL same node_id+kind entries within the window, not just
+    // adjacent ones -- duplicates for the same entity are rarely next to
+    // each other once other entities' changes interleave (e.g. two separate
+    // daily-refresh runs both detecting new Omar Abdullah mentions, with a
+    // dozen other people's changes sorted in between them). `shown` is
+    // already newest-first, so each key's bucket collects in that same
+    // order (group[0] = latest), and the Map's insertion order already
+    // equals "each entity+kind's most recent event first" -- no re-sort
+    // needed, iterating byKey.values() preserves overall recency ordering.
+    const byKey = new Map();
+    for (const c of shown) {
+      const key = c.node_id + '|' + c.kind;
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key).push(c);
+    }
+    const groups = [...byKey.values()];
+
+    let lastDay = null, html = '';
+    for (const g of groups) {
+      const latest = g[0];
+      const day = dayLabel(latest.detected_at);
+      if (day !== lastDay) { html += `<div class="eyebrow" style="margin:${lastDay ? '22' : '6'}px 0 4px">${esc(day)}</div>`; lastDay = day; }
+      html += `
       <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-        <i class="dot" style="background:${CHANGE_KIND_COLOR[c.kind] || 'var(--muted)'};margin-top:6px;flex:none"></i>
+        <i class="dot" style="background:${CHANGE_KIND_COLOR[latest.kind] || 'var(--muted)'};margin-top:6px;flex:none"></i>
         <div style="min-width:0">
-          <a href="${nodeOrBillHref(c.node_id)}" style="color:var(--ink);text-decoration:none;font-weight:600;font-size:13.5px">${esc(c.summary)}</a>
-          <div class="sub" style="margin:2px 0 0;font-size:12px">${esc(CHANGE_KIND_LABELS[c.kind] || c.kind)} · ${esc(timeAgo(c.detected_at))}
-            ${c.detail && c.detail.source ? ` · <a href="${esc(c.detail.source)}" target="_blank" rel="noopener" style="color:var(--muted)">source</a>` : ''}</div>
+          <a href="${nodeOrBillHref(latest.node_id)}" style="color:var(--ink);text-decoration:none;font-weight:600;font-size:13.5px">${esc(groupSummary(g))}</a>
+          <div class="sub" style="margin:2px 0 0;font-size:12px">${esc(CHANGE_KIND_LABELS[latest.kind] || latest.kind)} · latest ${esc(timeAgo(latest.detected_at))}
+            ${latest.detail && latest.detail.source ? ` · <a href="${esc(latest.detail.source)}" target="_blank" rel="noopener" style="color:var(--muted)">source</a>` : ''}</div>
         </div>
-      </div>`).join('') : '<div class="note">No changes of this type in the last 14 days.</div>';
+      </div>`;
+    }
+    $('changesList').innerHTML = html;
   };
   $('fchangekind').onchange = render;
   render();
