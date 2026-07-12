@@ -468,7 +468,7 @@ const $ = id => document.getElementById(id);
 // anything -- prefers-color-scheme was the only signal before this). ----
 (function initTheme() {
   const saved = localStorage.getItem('bg_theme');
-  const theme = saved || 'dark';
+  const theme = saved || 'light';
   document.documentElement.setAttribute('data-theme', theme);
 })();
 function toggleTheme() {
