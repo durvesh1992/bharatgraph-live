@@ -181,6 +181,30 @@
   .prov { font-size: 12px; color: var(--muted); margin: 10px 0 6px; overflow-wrap: anywhere; }
   .prov a, .chip a { color: var(--muted); }
 
+  /* D0-12: repeated inline link/spacing patterns consolidated into tokens so
+     pages stop hand-drifting (three near-identical accent-link styles were
+     found across showChangesFeed/showDossiers/showHome before this pass). */
+  .alink { color: var(--accent); text-decoration: none; }
+  .alink-b { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .accent-text { color: var(--accent); }
+  .ink-link { color: var(--ink); text-decoration: none; font-weight: 600; }
+  .ink-link-plain { color: var(--ink); text-decoration: none; }
+  .ink2-text { color: var(--ink-2); }
+  .muted { color: var(--muted); }
+  .mt-6 { margin-top: 6px; }
+  .mt-8 { margin-top: 8px; }
+  .mt-10 { margin-top: 10px; }
+  .mt-18 { margin-top: 18px; }
+  .mt-20 { margin-top: 20px; }
+  .mb-8 { margin-bottom: 8px; }
+  .mb-12 { margin-bottom: 12px; }
+  .mb-14 { margin-bottom: 14px; }
+  .mb-16 { margin-bottom: 16px; }
+  .mb-18 { margin-bottom: 18px; }
+  .ml-4 { margin-left: 4px; }
+  .pad-20 { padding: 20px; }
+  .m-0-16 { margin: 0 0 16px; }
+
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 10px; }
   .tile { background: var(--bg); border: 1px solid var(--border); border-radius: 14px;
           padding: 14px 16px; box-shadow: var(--shadow); text-decoration: none; display: block;
@@ -766,7 +790,7 @@ function nlAnswerShell(interpretation, bodyHtml, browseHref) {
   return `<div class="card" style="max-width:none;padding:14px 16px;margin:10px 0;font-size:13px">
     <div style="font-size:10.5px;color:var(--muted);margin-bottom:7px;letter-spacing:.04em">INTERPRETED AS: <span style="color:var(--ink)">${esc(interpretation)}</span></div>
     ${bodyHtml}
-    ${browseHref ? `<div class="sub" style="margin-top:8px;font-size:12px"><a href="${browseHref}" style="color:var(--accent);text-decoration:none">Open as full table →</a></div>` : ''}
+    ${browseHref ? `<div class="sub" style="margin-top:8px;font-size:12px"><a href="${browseHref}" class="alink">Open as full table →</a></div>` : ''}
   </div>`;
 }
 
@@ -787,7 +811,7 @@ function nlAnswer(rawQ) {
       let hist = seatHistory(seatNode);
       if (m[2]) hist = hist.filter(r => String(r.year) === m[2]);
       if (hist.length) {
-        const body = hist.map(r => `<div class="sub">${esc(r.year || '')} — <a href="#/node/${encodeURIComponent(r.personId)}" style="color:var(--ink);font-weight:600;text-decoration:none">${esc(r.personName)}</a>
+        const body = hist.map(r => `<div class="sub">${esc(r.year || '')} — <a href="#/node/${encodeURIComponent(r.personId)}" class="ink-link">${esc(r.personName)}</a>
           ${r.party ? `<span class="chip">${esc(r.party)}</span>` : ''}${r.votes != null ? ` · ${num(r.votes)} votes` : ''}</div>`).join('');
         return { intent: 'seat_winner', interpretation: `who won ${seatNode.name}${m[2] ? ' in ' + m[2] : ''}`, html: nlAnswerShell(`who won ${seatNode.name}${m[2] ? ' in ' + m[2] : ''}`, body) };
       }
@@ -803,7 +827,7 @@ function nlAnswer(rawQ) {
     if (seatNode) {
       const rep = mpOf(seatNode.id);
       const interp = `current representative of ${seatNode.name}`;
-      const body = rep ? `<div class="sub"><a href="#/node/${encodeURIComponent(rep.id)}" style="color:var(--ink);font-weight:600;text-decoration:none">${esc(rep.name)}</a>
+      const body = rep ? `<div class="sub"><a href="#/node/${encodeURIComponent(rep.id)}" class="ink-link">${esc(rep.name)}</a>
         ${currentParty(rep.id) ? `<span class="chip">${esc(currentParty(rep.id).name)}</span>` : ''}</div>` : `<div class="sub">Vacant / no current representative on file.</div>`;
       return { intent: 'current_rep', interpretation: interp, html: nlAnswerShell(interp, body) };
     }
@@ -892,7 +916,7 @@ function nlAnswer(rawQ) {
       const items = (adj.get(entity.id) || []).filter(x => x.rel === 'MENTIONED_IN').map(x => byId.get(x.other)).filter(Boolean)
         .sort((a, b) => (Date.parse(b.props.published) || 0) - (Date.parse(a.props.published) || 0)).slice(0, 5);
       const interp = `news about ${entity.name}`;
-      const body = items.length ? items.map(n2 => `<div class="sub"><a href="#/node/${encodeURIComponent(n2.id)}" style="color:var(--ink);text-decoration:none;font-weight:600">${esc(n2.name)}</a></div>`).join('')
+      const body = items.length ? items.map(n2 => `<div class="sub"><a href="#/node/${encodeURIComponent(n2.id)}" class="ink-link">${esc(n2.name)}</a></div>`).join('')
         : `<div class="sub">No news mentions on file.</div>`;
       return { intent: 'news', interpretation: interp, html: nlAnswerShell(interp, body) };
     }
@@ -922,7 +946,7 @@ function nlAnswer(rawQ) {
     const preds = nlBuildFilter(text, state, party);
     const rows = allMPs().filter(r => preds.every(p => p(r)));
     const interp = `count of MPs${state ? ' in ' + state.value : ''}${party ? ' · ' + party.value : ''}${preds.length ? ' matching filters' : ''}`;
-    return { intent: 'count', interpretation: interp, html: nlAnswerShell(interp, `<div class="sub" style="font-size:20px"><b>${rows.length}</b> MPs</div>${nlRowsHTML(rows, 8) ? `<div class="pillrow" style="margin-top:8px">${nlRowsHTML(rows, 8)}</div>` : ''}`) };
+    return { intent: 'count', interpretation: interp, html: nlAnswerShell(interp, `<div class="sub" style="font-size:20px"><b>${rows.length}</b> MPs</div>${nlRowsHTML(rows, 8) ? `<div class="pillrow mt-8">${nlRowsHTML(rows, 8)}</div>` : ''}`) };
   }
 
   // 11. Superlative: "richest/poorest/youngest/oldest/most cases/most terms (mp) <filters>"
@@ -947,7 +971,7 @@ function nlAnswer(rawQ) {
     const rows = allMPs().filter(r => preds.every(p => p(r)));
     const interp = `MPs${state ? ' in ' + state.value : ''}${party ? ' · ' + party.value : ''}${hasFilterWord ? ' matching filters' : ''}`;
     return { intent: 'filter_list', interpretation: interp, html: nlAnswerShell(interp,
-      `<div class="sub">${rows.length} match${rows.length === 1 ? '' : 'es'}</div><div class="pillrow" style="margin-top:6px">${nlRowsHTML(rows, 10)}</div>`,
+      `<div class="sub">${rows.length} match${rows.length === 1 ? '' : 'es'}</div><div class="pillrow mt-6">${nlRowsHTML(rows, 10)}</div>`,
       '#/browse/all') };
   }
 
@@ -960,7 +984,7 @@ function nlAnswer(rawQ) {
     const body = sector
       ? (bills.length
           ? `<div class="pillrow">${bills.slice(0, 10).map(b => `<a href="${billHref(b)}"><i class="dot" style="background:${billStatusColor(b.props.status)}"></i>${esc(b.name)}</a>`).join('')}</div>
-             <div class="sub" style="margin-top:8px"><a href="#/risk/${encodeURIComponent(sector)}" style="color:var(--accent);text-decoration:none;font-weight:600">Full ${esc(billSectorLabel(sector))} risk dashboard →</a></div>`
+             <div class="sub mt-8"><a href="#/risk/${encodeURIComponent(sector)}" class="alink-b">Full ${esc(billSectorLabel(sector))} risk dashboard →</a></div>`
           : `<div class="sub">No tagged bills found for ${esc(billSectorLabel(sector))} yet.</div>`)
       : `<div class="sub">Couldn't map that to a known sector. Try: ${Object.keys(BILL_SECTOR_SYNONYMS).slice(0, 6).map(billSectorLabel).join(', ')}, …</div>`;
     return { intent: 'bills_by_sector', interpretation: interp, html: nlAnswerShell(interp, body, sector ? '#/bills' : null) };
@@ -974,7 +998,7 @@ function nlAnswer(rawQ) {
       || allBills().find(b => b.name.toLowerCase().includes(q));
     const interp = `status of ${bill ? bill.name : q}`;
     const body = bill
-      ? `<div class="sub"><a href="${billHref(bill)}" style="color:var(--ink);font-weight:600;text-decoration:none">${esc(bill.name)}</a> —
+      ? `<div class="sub"><a href="${billHref(bill)}" class="ink-link">${esc(bill.name)}</a> —
           <span class="chip" style="color:${billStatusColor(bill.props.status)}">${esc(bill.props.status || 'Unknown')}${bill.props.status_house ? ' · ' + esc(bill.props.status_house) : ''}</span></div>`
       : `<div class="sub">No bill on file matching "${esc(q)}".</div>`;
     return { intent: 'bill_status', interpretation: interp, html: nlAnswerShell(interp, body, bill ? billHref(bill) : '#/bills') };
@@ -1024,7 +1048,24 @@ $('q').addEventListener('input', () => { clearTimeout(debounce); debounce = setT
 function closeSearchDropdown() { $('searchDropdown').classList.remove('open'); }
 function doSearch() {
   const q = $('q').value.toLowerCase().trim();
-  if (!q) { $('results').innerHTML = ''; $('nlanswer').innerHTML = ''; closeSearchDropdown(); return; }
+  if (!q) {
+    // Clicking a type chip (People/Parties/Seats/States) with no text typed
+    // used to just close the dropdown -- a dead click, since everything below
+    // this point only runs against a non-empty query. Treat it as "browse this
+    // type" instead: list entities of that type A-Z, same as a real search hit.
+    if (!typeFilter) { $('results').innerHTML = ''; $('nlanswer').innerHTML = ''; closeSearchDropdown(); return; }
+    $('searchDropdown').classList.add('open');
+    $('nlanswer').innerHTML = '';
+    const label = (FILTERS.find(f => f[0] === typeFilter) || ['', ''])[1].toLowerCase();
+    const all = searchIndex.map(x => x.n).filter(n => n.type === typeFilter && !n.props.pep_only)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const shown = all.slice(0, 60);
+    $('results').innerHTML = !shown.length ? '<li class="muted">No matches</li>' :
+      `<li class="muted">${num(all.length)} ${esc(label)} — showing first ${shown.length} A-Z, type to search</li>` +
+      shown.map(n => `<li tabindex="0" data-go="${esc(n.id)}"><i class="dot" style="background:${TYPE_COLOR(n.type)}"></i>
+       ${esc(n.name)}<span class="chip">${esc(n.type)}</span></li>`).join('');
+    return;
+  }
   $('searchDropdown').classList.add('open');
   let nl = null;
   try { nl = nlAnswer(q); } catch (e) { nl = null; } // never let a grammar bug break plain search
@@ -1039,10 +1080,16 @@ function doSearch() {
   $('results').innerHTML = rs.map(n =>
     `<li tabindex="0" data-go="${esc(n.id)}"><i class="dot" style="background:${TYPE_COLOR(n.type)}"></i>
      ${esc(n.name)}<span class="chip">${esc(n.type)}</span></li>`).join('') ||
-    '<li style="color:var(--muted)">No matches</li>';
+    '<li class="muted">No matches</li>';
 }
 $('results').addEventListener('click', e => { const li = e.target.closest('li[data-go]'); if (li) go(li.dataset.go); });
-document.addEventListener('click', e => { if (!e.target.closest('.searchwrap')) closeSearchDropdown(); });
+// .searchbar (not just .searchwrap) -- the #fchips type filters sit outside
+// .searchwrap as a sibling, so a click on a chip button bubbled past this
+// listener in the same dispatch and closed the dropdown doSearch() had just
+// opened a moment earlier: every People/Parties/Seats/States click looked
+// like a dead click. Real bug, not a testing artifact -- reproduced with a
+// direct .click() call and confirmed via getComputedStyle, not just classList.
+document.addEventListener('click', e => { if (!e.target.closest('.searchbar')) closeSearchDropdown(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSearchDropdown(); });
 window.addEventListener('hashchange', closeSearchDropdown);
 $('q').addEventListener('focus', () => { if ($('q').value.trim()) $('searchDropdown').classList.add('open'); });
@@ -1220,7 +1267,7 @@ function showGeoIndex() {
     .sort((a, b) => (b.ls + b.ac) - (a.ls + a.ac));
   setView(`
     <h2>Browse by state</h2>
-    <div class="sub" style="margin-bottom:14px">${stateNodes.length} states/UTs · click any state for its Lok Sabha seats${byState.size ? ' and assembly seats where ingested' : ''}.</div>
+    <div class="sub mb-14">${stateNodes.length} states/UTs · click any state for its Lok Sabha seats${byState.size ? ' and assembly seats where ingested' : ''}.</div>
     <div class="tiles">
       ${stateNodes.map(s => `<a class="tile" href="#/node/${encodeURIComponent(s.id)}">
         <b>${s.ls}${s.ac ? ' + ' + s.ac : ''}</b>
@@ -1240,9 +1287,9 @@ function showNewsFeed() {
 
   setView(`
     <h2>News</h2>
-    <div class="sub" style="margin-bottom:14px">${articles.length} article${articles.length === 1 ? '' : 's'} mentioning
+    <div class="sub mb-14">${articles.length} article${articles.length === 1 ? '' : 's'} mentioning
       someone or something in the graph, from ${outlets.length} outlet${outlets.length === 1 ? '' : 's'} · most recent first.</div>
-    <div class="controls" style="margin:0 0 16px">
+    <div class="controls m-0-16">
       <select id="foutlet"><option value="">All outlets</option>${outlets.map(o => `<option>${esc(o)}</option>`).join('')}</select>
       <span class="chip" id="fnewscount"></span>
     </div>
@@ -1255,7 +1302,7 @@ function showNewsFeed() {
     $('newslist').innerHTML = shown.map(a => `
       <div class="card">
         <h4>${esc(a.props.outlet)}${a.props.published ? ` · ${esc(a.props.published)}` : ''}</h4>
-        <div class="sub" style="margin:2px 0 8px"><a href="#/node/${encodeURIComponent(a.id)}" style="color:var(--ink);font-weight:600;text-decoration:none">${esc(a.name)}</a></div>
+        <div class="sub" style="margin:2px 0 8px"><a href="#/node/${encodeURIComponent(a.id)}" class="ink-link">${esc(a.name)}</a></div>
         ${a.props.summary ? `<p style="max-width:68ch;color:var(--ink-2);margin:4px 0 10px;font-size:13.5px">${esc(a.props.summary)}</p>` : ''}
         <div class="pillrow">
           ${a.mentions.map(m => `<a href="#/node/${encodeURIComponent(m.id)}"><i class="dot" style="background:${TYPE_COLOR(m.type)}"></i>${esc(m.name)}</a>`).join('')}
@@ -1356,7 +1403,7 @@ function showCompare(id1, id2) {
 
   setView(`
     <h2>Compare</h2>
-    <div class="sub" style="margin-bottom:14px">Pick any two people, parties, or seats to compare side by side.</div>
+    <div class="sub mb-14">Pick any two people, parties, or seats to compare side by side.</div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">
       ${entityPickerHTML(1, a)}
       ${entityPickerHTML(2, b)}
@@ -1364,12 +1411,12 @@ function showCompare(id1, id2) {
     ${a && b ? (a.type !== b.type ? `<div class="note">Pick two entities of the same type (person/person, party/party, or seat/seat) for a meaningful comparison.</div>` : `
     <div class="tablewrap"><table class="mps">
       <thead><tr><th></th>
-        <th><a href="#/node/${encodeURIComponent(a.id)}" style="color:var(--ink);text-decoration:none">${esc(a.name)}</a></th>
-        <th><a href="#/node/${encodeURIComponent(b.id)}" style="color:var(--ink);text-decoration:none">${esc(b.name)}</a></th>
+        <th><a href="#/node/${encodeURIComponent(a.id)}" class="ink-link-plain">${esc(a.name)}</a></th>
+        <th><a href="#/node/${encodeURIComponent(b.id)}" class="ink-link-plain">${esc(b.name)}</a></th>
       </tr></thead>
       <tbody>
         ${compareRows(a, b).map(([label, va, vb]) => `
-          <tr><td style="color:var(--muted)">${esc(label)}</td>
+          <tr><td class="muted">${esc(label)}</td>
             <td class="num" style="text-align:left">${esc(va)}</td>
             <td class="num" style="text-align:left">${esc(vb)}</td></tr>`).join('')}
       </tbody>
@@ -1463,7 +1510,7 @@ function showHome() {
     ${(() => { const recentChanges = (DATA.changes || []).filter(c => (Date.parse(c.detected_at) || 0) >= Date.now() - 14 * 86400000);
       return recentChanges.length ? `<div class="sub" style="margin:-8px 0 18px">
       ${recentChanges.length} tracked changes in the last 14 days —
-      <a href="#/changes" style="color:var(--accent);text-decoration:none;font-weight:600">see what changed →</a></div>` : ''; })()}
+      <a href="#/changes" class="alink-b">see what changed →</a></div>` : ''; })()}
     <div class="kpirow">
       <div class="kpicard"><b>${num(DATA.nodes.length)}</b><small>Total entities — MPs, parties, seats, bills, news</small></div>
       <div class="kpicard"><b>${num(DATA.edges.length)}</b><small>Relationships mapped in the graph</small></div>
@@ -1495,7 +1542,7 @@ function showHome() {
       <div class="srow"><span>Live news — 4 outlets</span><span class="sb live">Live</span></div>
     </div>
     <h2>The 18th Lok Sabha, by the numbers</h2>
-    <div class="sub" style="margin-bottom:16px">From election affidavits (ADR), official Digital Sansad records and constituency-wise results. Every number links to the people behind it.</div>
+    <div class="sub mb-16">From election affidavits (ADR), official Digital Sansad records and constituency-wise results. Every number links to the people behind it.</div>
     <div class="tiles">
       <a class="tile" href="#/browse/cases"><b>${t.with_cases}</b><small>MPs with criminal cases (${pct(t.with_cases)})</small></a>
       <a class="tile" href="#/browse/crorepati"><b>${t.crorepatis}</b><small>Crorepati MPs (${pct(t.crorepatis)})</small></a>
@@ -1600,7 +1647,7 @@ function stateStrongholdTable() {
         const sid = stateIdByName.get(r.state);
         const share = Math.round(100 * r.leader[1] / r.total);
         return `<tr>
-          <td>${sid ? `<a href="#/node/${encodeURIComponent(sid)}" style="color:var(--ink);text-decoration:none;font-weight:600">${esc(r.state)}</a>` : esc(r.state)}</td>
+          <td>${sid ? `<a href="#/node/${encodeURIComponent(sid)}" class="ink-link">${esc(r.state)}</a>` : esc(r.state)}</td>
           <td class="num">${r.total}</td>
           <td><i class="dot" style="background:${partyColor(r.leader[0])}"></i> ${esc(r.leader[0])}</td>
           <td class="num">${r.leader[1]}</td>
@@ -1643,10 +1690,10 @@ function defectionFlowList(flows) {
         <div>
           <div style="display:flex;align-items:center;gap:6px;font-size:13.5px;margin-bottom:5px;flex-wrap:wrap">
             <i style="width:8px;height:8px;border-radius:2px;background:${partyColor(f.from)};flex:none"></i>
-            <b>${esc(f.from)}</b><span style="color:var(--muted)">elected as</span>
-            <span style="color:var(--muted)">→</span>
+            <b>${esc(f.from)}</b><span class="muted">elected as</span>
+            <span class="muted">→</span>
             <i style="width:8px;height:8px;border-radius:2px;background:${partyColor(f.to)};flex:none"></i>
-            <b>${esc(f.to)}</b><span style="color:var(--muted)">now</span>
+            <b>${esc(f.to)}</b><span class="muted">now</span>
           </div>
           <div style="background:var(--bg-3);border-radius:4px;height:8px;overflow:hidden">
             <div style="background:${partyColor(f.from)};height:100%;border-radius:4px;width:${Math.max(3, 100 * f.n / max)}%"></div>
@@ -1684,10 +1731,10 @@ function showParties() {
     </div>
     ${flows.length ? `
     <div class="eyebrow">Defection flows — elected as → sits with now (top ${flows.length} by volume)</div>
-    <div class="tablecard" style="padding:20px">
+    <div class="tablecard pad-20">
       ${defectionFlowList(flows)}
     </div>
-    <div class="sub" style="margin-top:8px">${ins.party_switches.length} total detected switches since the last election. Full list on the <a href="#/" style="color:var(--accent);text-decoration:none">home page</a>.</div>` : ''}
+    <div class="sub mt-8">${ins.party_switches.length} total detected switches since the last election. Full list on the <a href="#/" class="alink">home page</a>.</div>` : ''}
     <div class="eyebrow">State strongholds — leading party by current Lok Sabha seats</div>
     <div class="sub" style="margin-bottom:10px">Every state with at least one sitting MP, sorted by total seats. "Share" is the leading party's share of that state's seats.</div>
     <div class="tablecard"><div class="tablewrap">${stateStrongholdTable()}</div></div>`);
@@ -1715,25 +1762,25 @@ function showDossiers() {
       history 2019→2024, wealth trajectory), and the contest (runner-up, margin arithmetic — always labeled as
       arithmetic, never a forecast). Every figure links back to its source in a numbered appendix.</div>
     <div class="eyebrow">Sample dossiers</div>
-    <div class="tablecard" style="padding:20px">
+    <div class="tablecard pad-20">
       <div class="sub">Flagship samples (Varanasi, Rae Bareli, and Mumbai North West — the 2024 seat decided by
         48 votes) are in production and pending founder review before they're published here. Request one below
         and we'll follow up directly.</div>
     </div>
     <div class="eyebrow">Request a dossier</div>
-    <div class="tablecard" style="padding:20px">
+    <div class="tablecard pad-20">
       <div class="sub" style="margin-bottom:12px">Tell us the seat or person you need — we'll follow up with
         pricing and turnaround. A single-seat dossier or a full district pack, either works.</div>
       <a href="${mailtoDossier('')}" style="display:inline-block;padding:9px 18px;border-radius:999px;background:var(--accent);color:#fff;text-decoration:none;font-weight:600;font-size:13.5px">Request a dossier →</a>
       <div class="sub" style="margin-top:10px;font-size:12.5px">Or email us directly at
-        <a href="mailto:duru1992@gmail.com" style="color:var(--accent);text-decoration:none">duru1992@gmail.com</a>
+        <a href="mailto:duru1992@gmail.com" class="alink">duru1992@gmail.com</a>
         if your device doesn't open a mail client automatically.</div>
     </div>
     <div class="eyebrow">Prefer alerts to a one-off document?</div>
-    <div class="tablecard" style="padding:20px">
-      <div class="sub" style="margin-bottom:12px">See <a href="#/changes" style="color:var(--accent);text-decoration:none;font-weight:600">what changed →</a>
+    <div class="tablecard pad-20">
+      <div class="sub" style="margin-bottom:12px">See <a href="#/changes" class="alink-b">what changed →</a>
         across the whole graph in the last 14 days — the same feed a subscriber's weekly digest is built from.
-        Track your sector's bills on the <a href="#/risk" style="color:var(--accent);text-decoration:none;font-weight:600">Policy Risk Monitor →</a>.</div>
+        Track your sector's bills on the <a href="#/risk" class="alink-b">Policy Risk Monitor →</a>.</div>
       <a href="#" onclick="openLeadModal({context:'dossiers'});return false" style="display:inline-block;padding:9px 18px;border-radius:999px;background:var(--bg-3);color:var(--ink);text-decoration:none;font-weight:600;font-size:13.5px">Start a free 14-day pilot →</a>
     </div>
   `);
@@ -1798,10 +1845,10 @@ function showBillsIndex() {
 
   setView(`
     <h2>Bills</h2>
-    <div class="sub" style="margin-bottom:14px">${bills.length} bills tracked from PRS Legislative Research
+    <div class="sub mb-14">${bills.length} bills tracked from PRS Legislative Research
       (title, ministry, and status timeline are their public record; sector/impact/summary are
       <span class="chip" style="margin-left:2px">AI-tagged — verify before acting</span>).</div>
-    <div class="controls" style="margin:0 0 16px">
+    <div class="controls m-0-16">
       <input id="bqtext" type="text" placeholder="Search title…">
       <select id="bfsector"><option value="">All sectors</option>${sectors.map(s => `<option value="${esc(s)}">${esc(billSectorLabel(s))}</option>`).join('')}</select>
       <select id="bfstatus"><option value="">All statuses</option>${statuses.map(s => `<option>${esc(s)}</option>`).join('')}</select>
@@ -1859,10 +1906,10 @@ function showBillsIndex() {
 function showBillDetail(slug) {
   $('gwrap').hidden = true;
   const bill = billBySlug(slug);
-  if (!bill) { setView(`<div class="sub" style="margin-bottom:8px"><a href="#/bills" style="color:var(--accent);text-decoration:none">← All bills</a></div><div class="note">Bill not found.</div>`); return; }
+  if (!bill) { setView(`<div class="sub" style="margin-bottom:8px"><a href="#/bills" class="alink">← All bills</a></div><div class="note">Bill not found.</div>`); return; }
   const p = bill.props;
   setView(`
-    <div class="sub" style="margin-bottom:8px"><a href="#/bills" style="color:var(--accent);text-decoration:none">← All bills</a></div>
+    <div class="sub" style="margin-bottom:8px"><a href="#/bills" class="alink">← All bills</a></div>
     <h2>${esc(bill.name)}</h2>
     <div class="pillrow" style="margin:8px 0 18px">
       <span class="chip" style="color:${billStatusColor(p.status)}">${esc(p.status || 'Unknown status')}${p.status_house ? ' · ' + esc(p.status_house) : ''}</span>
@@ -1892,8 +1939,8 @@ function showBillDetail(slug) {
 
     <div class="eyebrow">Source</div>
     <div class="sub">
-      <a href="${esc(p.prs_url || '#')}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">View on PRS India →</a>
-      ${p.bill_text_url ? `<br><a href="${esc(p.bill_text_url)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">Bill text (PDF) →</a>` : ''}
+      <a href="${esc(p.prs_url || '#')}" target="_blank" rel="noopener" class="alink">View on PRS India →</a>
+      ${p.bill_text_url ? `<br><a href="${esc(p.bill_text_url)}" target="_blank" rel="noopener" class="alink">Bill text (PDF) →</a>` : ''}
     </div>`);
 }
 
@@ -1929,11 +1976,11 @@ function showPricing() {
     </div>
     <div class="eyebrow">Questions</div>
     <div class="pricefaq">
-      <details><summary>What data sources power this?</summary><p>ADR/MyNeta election affidavits, the Election Commission of India, Digital Sansad official records, PRS Legislative Research (bills), Wikidata, and 4 live news outlets — every fact links to its source. See <a href="#/about" style="color:var(--accent)">What we're building</a>.</p></details>
+      <details><summary>What data sources power this?</summary><p>ADR/MyNeta election affidavits, the Election Commission of India, Digital Sansad official records, PRS Legislative Research (bills), Wikidata, and 4 live news outlets — every fact links to its source. See <a href="#/about" class="accent-text">What we're building</a>.</p></details>
       <details><summary>How fresh is the data?</summary><p>The graph refreshes daily via an automated job. The "Updated" indicator in the header always shows the real last-refresh time — never a hand-typed claim.</p></details>
       <details><summary>What stays free?</summary><p>Every entity, every page, full search, compare, and the war room stay public and free, permanently — that's also how we're found by the people who end up paying for the deeper layer (alerts, exports, API).</p></details>
       <details><summary>Can I cancel anytime?</summary><p>Yes — no lock-in contracts on Starter or Professional. Enterprise terms are agreed individually.</p></details>
-      <details><summary>Who builds this?</summary><p>An independently built, source-cited political knowledge graph — see <a href="#/about" style="color:var(--accent)">About</a> for the full story and our <a href="https://github.com/durvesh1992/bharatgraph-live" target="_blank" rel="noopener" style="color:var(--accent)">public snapshot repo</a>.</p></details>
+      <details><summary>Who builds this?</summary><p>An independently built, source-cited political knowledge graph — see <a href="#/about" class="accent-text">About</a> for the full story and our <a href="https://github.com/durvesh1992/bharatgraph-live" target="_blank" rel="noopener" class="accent-text">public snapshot repo</a>.</p></details>
     </div>`);
 }
 
@@ -1980,7 +2027,7 @@ function showProductLanding() {
       <div class="srow"><span>Live news — 4 outlets</span><span class="sb live">Live</span></div>
     </div>
     <div class="sub">No fabricated claims, no invented customers — every number above is computed from the live
-      graph at page-load, not typed by hand. <a href="#/about" style="color:var(--accent);text-decoration:none">How it's built →</a></div>`);
+      graph at page-load, not typed by hand. <a href="#/about" class="alink">How it's built →</a></div>`);
 }
 
 // ---- H3: privacy policy (plain language; the only PII this product ever
@@ -1990,10 +2037,10 @@ function showPrivacy() {
   $('gwrap').hidden = true;
   setView(`
     <h2>Privacy policy</h2>
-    <div class="sub" style="margin-bottom:16px">Last updated 2026-07-12. Plain language, no legalese padding.</div>
+    <div class="sub mb-16">Last updated 2026-07-12. Plain language, no legalese padding.</div>
     <div class="about">
       <p><b>The short version:</b> everything about MPs, parties, bills, and constituencies on this site is
-        public-record political data, sourced and cited (see <a href="#/about" style="color:var(--accent)">About</a>).
+        public-record political data, sourced and cited (see <a href="#/about" class="accent-text">About</a>).
         The only personal data we collect about <i>you</i> is what you give us if you sign up for a pilot or digest:
         your email address, the sectors you say you're tracking, and an optional free-text note.</p>
 
@@ -2014,7 +2061,7 @@ function showPrivacy() {
 
       <div class="eyebrow">How to unsubscribe</div>
       <p>Every digest email has an unsubscribe link. You can also email
-        <a href="mailto:duru1992@gmail.com?subject=Unsubscribe" style="color:var(--accent)">duru1992@gmail.com</a>
+        <a href="mailto:duru1992@gmail.com?subject=Unsubscribe" class="accent-text">duru1992@gmail.com</a>
         with "Unsubscribe" and we'll remove you immediately.</p>
 
       <div class="eyebrow">Where it's stored</div>
@@ -2026,7 +2073,7 @@ function showPrivacy() {
       <p>The graph itself (MPs, affidavits, election results, bills, news) is public-record information about
         public officials, drawn from ADR/MyNeta, the Election Commission, Digital Sansad, PRS Legislative
         Research, Wikidata, and news outlets — never voter-level or private personal data. See our
-        <a href="#/about" style="color:var(--accent)">ethics and methodology</a> page.</p>
+        <a href="#/about" class="accent-text">ethics and methodology</a> page.</p>
 
       <div class="note" style="margin-top:20px">This page is drafted directly by the team building this product
         and covers exactly what the product actually does today, honestly. It is not a substitute for legal advice
@@ -2150,7 +2197,7 @@ function showRiskMonitor(routeParam) {
           ${recentMovement.length ? recentMovement.map(b => {
             const last = b.props.status_history.at(-1);
             return `<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px">
-              <a href="${billHref(b)}" style="color:var(--ink);text-decoration:none;font-weight:600">${esc(b.name)}</a>
+              <a href="${billHref(b)}" class="ink-link">${esc(b.name)}</a>
               <div class="sub" style="margin:2px 0 0">→ ${esc(last.status)}${last.date ? ' on ' + esc(last.date) : ''}</div>
             </div>`;
           }).join('') : '<div class="sub">No status history on file yet.</div>'}
@@ -2239,10 +2286,10 @@ function showChangesFeed() {
 
   setView(`
     <h2>What changed</h2>
-    <div class="sub" style="margin-bottom:14px">${recent.length} change${recent.length === 1 ? '' : 's'} detected across the graph
+    <div class="sub mb-14">${recent.length} change${recent.length === 1 ? '' : 's'} detected across the graph
       in the last 14 days — this is the same feed a subscriber's weekly digest is built from
-      (<a href="#/risk" style="color:var(--accent);text-decoration:none">set up sector alerts →</a>).</div>
-    <div class="controls" style="margin:0 0 16px">
+      (<a href="#/risk" class="alink">set up sector alerts →</a>).</div>
+    <div class="controls m-0-16">
       <select id="fchangekind"><option value="">All change types</option>${kinds.map(k => `<option value="${esc(k)}">${esc(CHANGE_KIND_LABELS[k] || k)}</option>`).join('')}</select>
       <span class="chip" id="fchangecount"></span>
     </div>
@@ -2312,7 +2359,7 @@ function showChangesFeed() {
         <div style="min-width:0">
           <a href="${nodeOrBillHref(latest.node_id)}" style="color:var(--ink);text-decoration:none;font-weight:600;font-size:13.5px">${esc(groupSummary(g))}</a>
           <div class="sub" style="margin:2px 0 0;font-size:12px">${esc(CHANGE_KIND_LABELS[latest.kind] || latest.kind)} · latest ${esc(timeAgo(latest.detected_at))}
-            ${latest.detail && latest.detail.source ? ` · <a href="${esc(latest.detail.source)}" target="_blank" rel="noopener" style="color:var(--muted)">source</a>` : ''}</div>
+            ${latest.detail && latest.detail.source ? ` · <a href="${esc(latest.detail.source)}" target="_blank" rel="noopener" class="muted">source</a>` : ''}</div>
         </div>
       </div>`;
     }
@@ -2419,7 +2466,7 @@ function electionCard(title, winner, runner) {
   const row = (nm, party, votes, share, color, goid) => `
     <div class="vsrow">
       <span class="nm">${goid ? `<a href="#/node/${encodeURIComponent(goid)}">${esc(nm)}</a>` : `<b>${esc(nm)}</b>`}
-        <span class="chip" style="margin-left:4px">${esc(party || '')}</span></span>
+        <span class="chip ml-4">${esc(party || '')}</span></span>
       <span class="bar"><i style="width:${Math.round(100 * votes / max)}%;background:${color}"></i></span>
       <span class="vv">${num(votes)}${share != null ? ' · ' + share + '%' : ''}</span>
     </div>`;
@@ -2428,7 +2475,7 @@ function electionCard(title, winner, runner) {
       ${row(winner.name, winner.party, wv, winner.share, 'var(--t-party)', winner.id)}
       ${runner ? row(runner.name, runner.party, rv, runner.share, 'var(--bg-3)', runner.id) : ''}
     </div>
-    <div class="sub" style="margin-top:10px">${winner.margin != null ? `Margin <b>${num(winner.margin)}</b>${winner.margin_pct != null ? ' (' + winner.margin_pct + ' pp)' : ''}` : ''}
+    <div class="sub mt-10">${winner.margin != null ? `Margin <b>${num(winner.margin)}</b>${winner.margin_pct != null ? ' (' + winner.margin_pct + ' pp)' : ''}` : ''}
       ${winner.turnout != null ? ` · Turnout ${winner.turnout}%` : ''}</div>
   </div>`;
 }
@@ -2474,14 +2521,14 @@ function personBlocks(node) {
         <span class="chip" style="background:var(--bg-3);margin-right:6px">LOST</span>
         <b>${esc(r.year || '')}</b> · ${esc(r.constituency || '')}${r.state ? ` (${esc(r.state)})` : ''}
         <span class="chip">${esc(r.party || '')}</span>
-        <span style="color:var(--muted)"> — ${r.votes != null ? num(r.votes) + ' votes' : ''}${r.share != null ? ` (${r.share}%)` : ''}, lost to ${esc(r.lostTo || 'the winner')}${r.margin != null ? ` by ${num(r.margin)}` : ''}</span>
+        <span class="muted"> — ${r.votes != null ? num(r.votes) + ' votes' : ''}${r.share != null ? ` (${r.share}%)` : ''}, lost to ${esc(r.lostTo || 'the winner')}${r.margin != null ? ` by ${num(r.margin)}` : ''}</span>
       </div>`;
     }
     return `<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:13.5px">
-      <b>${esc(r.year || '')}</b> · <a href="#/node/${encodeURIComponent(r.bodyId)}" style="color:var(--ink);font-weight:600;text-decoration:none">${esc(r.label)}</a>
-      ${r.party ? `<span class="chip" style="margin-left:4px">${esc(r.party)}</span>` : ''}
+      <b>${esc(r.year || '')}</b> · <a href="#/node/${encodeURIComponent(r.bodyId)}" class="ink-link">${esc(r.label)}</a>
+      ${r.party ? `<span class="chip ml-4">${esc(r.party)}</span>` : ''}
       ${r.constituency ? ` · ${esc(r.constituency)}${r.state ? ` (${esc(r.state)})` : ''}` : (r.state ? ` · ${esc(r.state)}` : '')}
-      ${r.margin != null ? `<span style="color:var(--muted)"> — won by ${num(r.margin)}${r.marginPct != null ? ` (${r.marginPct}pp)` : ''}</span>` : ''}
+      ${r.margin != null ? `<span class="muted"> — won by ${num(r.margin)}${r.marginPct != null ? ` (${r.marginPct}pp)` : ''}</span>` : ''}
     </div>`;
   }).join('');
   return `<div class="eyebrow">Career timeline</div><div class="tablecard" style="padding:4px 20px">${rows}</div>`;
@@ -2495,7 +2542,7 @@ function casesTrajectory(node) {
     node.props.affidavit && { year: '2024', n: node.props.affidavit.criminal_cases },
   ].filter(Boolean);
   if (points.length < 2) return '';
-  return `<div class="sub" style="margin-top:8px"><b>Criminal cases declared:</b> ${points.map(p => `${p.year}: ${p.n}`).join(' → ')}</div>`;
+  return `<div class="sub mt-8"><b>Criminal cases declared:</b> ${points.map(p => `${p.year}: ${p.n}`).join(' → ')}</div>`;
 }
 
 // ---- F2: network (colleagues, ballot history, predecessor/successor) ----
@@ -2536,7 +2583,7 @@ function showDetail(node) {
       <div class="note">${esc(node.props.pep_note || 'Listed by OpenSanctions as a relative/close associate of a public figure. BharatGraph holds no further data on this person.')}</div>
       ${rel.filter(x => x.rel === 'RELATED_TO').map(x => `
         <div class="sub">${esc(x.props.relationship || 'related to')} of
-          <a href="#/node/${encodeURIComponent(x.node.id)}" style="color:var(--accent);text-decoration:none">${esc(x.node.name)}</a></div>`).join('')}
+          <a href="#/node/${encodeURIComponent(x.node.id)}" class="alink">${esc(x.node.name)}</a></div>`).join('')}
       <div class="prov">source: <a href="${esc(node.source)}" target="_blank" rel="noopener">OpenSanctions</a> · retrieved ${esc(node.retrieved_at)}</div>`);
     return;
   }
@@ -2564,12 +2611,12 @@ function showDetail(node) {
     <div class="sub"><b>PEP status:</b> ${(pep.topics || []).map(t => esc(t.replace('role.', ''))).join(', ') || 'flagged'}
       <span class="chip">· <a href="${esc(pep.source)}" target="_blank" rel="noopener">source: OpenSanctions</a></span></div>`;
   const docTextHtml = node.type !== 'document' || !node.props.text ? '' : `
-    <details style="margin-top:10px">
+    <details class="mt-10">
       <summary style="cursor:pointer;color:var(--accent);font-size:13px">
         Read full text (${node.props.pages || '?'} pages, ${num(node.props.chars || node.props.text.length)} characters) — click to expand</summary>
       <div style="margin-top:8px;max-height:480px;overflow-y:auto;white-space:pre-wrap;font-size:13px;line-height:1.6;
                   background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px">${esc(node.props.text)}</div>
-      ${node.props.archived_via ? `<div class="chip" style="margin-top:6px">· original site unreachable when ingested; retrieved via <a href="${esc(node.props.archived_via)}" target="_blank" rel="noopener">Wayback Machine snapshot</a></div>` : ''}
+      ${node.props.archived_via ? `<div class="chip mt-6">· original site unreachable when ingested; retrieved via <a href="${esc(node.props.archived_via)}" target="_blank" rel="noopener">Wayback Machine snapshot</a></div>` : ''}
     </details>`;
   const newsHtml = node.props.kind !== 'news' ? '' : `
     <div class="sub"><b>${esc(node.props.outlet || 'News')}</b>${node.props.published ? ` · ${esc(node.props.published)}` : ''}</div>
@@ -2591,10 +2638,10 @@ function showDetail(node) {
         .filter(Boolean).join(' · ')}
       <span class="chip">· <a href="${esc(social.source)}" target="_blank" rel="noopener">source: Wikidata</a></span></div>`;
   const caseDetailHtml = (cases, sourceUrl) => !cases || !cases.length ? '' : `
-    <details style="margin-top:6px">
+    <details class="mt-6">
       <summary style="cursor:pointer;color:var(--accent);font-size:13px">
         ${cases.length} case${cases.length === 1 ? '' : 's'} with FIR/IPC detail — click to expand</summary>
-      <div class="tablewrap" style="margin-top:8px"><table class="mps"><thead><tr>
+      <div class="tablewrap mt-8"><table class="mps"><thead><tr>
         <th>#</th><th>Case reference</th><th>IPC sections</th><th>Charges framed</th>
       </tr></thead><tbody>
         ${cases.map(c => `<tr><td>${c.serial}</td><td>${esc(c.case_reference || '—')}</td>
@@ -2618,7 +2665,7 @@ function showDetail(node) {
     if (points.length < 2) return '';
     const max = Math.max(...points.map(p => p.assets), 1);
     return `
-    <div class="sub" style="margin-top:10px"><b>Declared assets over time</b></div>
+    <div class="sub mt-10"><b>Declared assets over time</b></div>
     <div style="display:flex;flex-direction:column;gap:6px;margin:6px 0 4px;max-width:520px">
       ${points.map(p => `
         <div style="display:grid;grid-template-columns:44px 1fr 90px;align-items:center;gap:8px">
@@ -2653,14 +2700,14 @@ function showDetail(node) {
     if (bits.length) roleLine = `<div class="sub" style="margin-top:-4px">${esc(bits.join(', '))}</div>`;
   }
   const warRoomLink = node.type === 'person' && constituencyOf(node.id)
-    ? ` · <a href="#/war/${encodeURIComponent(constituencyOf(node.id).id)}" style="color:var(--accent);text-decoration:none">War room for their seat →</a>` : '';
+    ? ` · <a href="#/war/${encodeURIComponent(constituencyOf(node.id).id)}" class="alink">War room for their seat →</a>` : '';
 
   setView(`
     <h2><i class="dot" style="display:inline-block;background:${TYPE_COLOR(node.type)};width:12px;height:12px;border-radius:4px"></i>
         ${esc(node.name)}</h2>
     ${roleLine}
     <div class="sub">${esc(node.type)} · <code style="font-size:12px">${esc(node.id)}</code>
-      ${['person', 'party', 'constituency'].includes(node.type) ? ` · <a href="#/compare/${encodeURIComponent(node.id)}" style="color:var(--accent);text-decoration:none">Compare with…</a>` : ''}${warRoomLink}</div>
+      ${['person', 'party', 'constituency'].includes(node.type) ? ` · <a href="#/compare/${encodeURIComponent(node.id)}" class="alink">Compare with…</a>` : ''}${warRoomLink}</div>
     ${props ? `<div class="sub">${props}</div>` : ''}
     ${sanHtml}${socialHtml}${pepHtml}${affHtml}${aff19Html}${aff14Html}${wealthChartHtml}${node.type === 'person' ? casesTrajectory(node) : ''}${docTextHtml}${newsHtml}
     <div class="prov">source: <a href="${esc(node.source)}" target="_blank" rel="noopener">${esc(node.source)}</a>
@@ -2817,9 +2864,9 @@ function warRoomTimeline(history) {
         <span style="font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums">${esc(year)}</span>
         <div>
           <div style="font-size:13.5px;margin-bottom:3px">
-            <a href="#/node/${encodeURIComponent(r.personId)}" style="color:var(--ink);font-weight:600;text-decoration:none">${esc(r.personName || '—')}</a>
-            ${r.party ? `<span class="chip" style="margin-left:4px">${esc(r.party)}</span>` : ''}
-            ${r.runnerUp ? `<span style="color:var(--muted)"> beat ${esc(r.runnerUp)}${r.runnerUpParty ? ` (${esc(r.runnerUpParty)})` : ''}</span>` : ''}
+            <a href="#/node/${encodeURIComponent(r.personId)}" class="ink-link">${esc(r.personName || '—')}</a>
+            ${r.party ? `<span class="chip ml-4">${esc(r.party)}</span>` : ''}
+            ${r.runnerUp ? `<span class="muted"> beat ${esc(r.runnerUp)}${r.runnerUpParty ? ` (${esc(r.runnerUpParty)})` : ''}</span>` : ''}
           </div>
           ${barPct != null ? `<div style="background:var(--bg-3);border-radius:4px;height:8px;max-width:320px;overflow:hidden">
             <div style="background:${partyColor(r.party || '')};height:100%;border-radius:4px;width:${Math.min(100, barPct)}%"></div></div>` : ''}
@@ -2841,7 +2888,7 @@ function warRoomAnalysis(history) {
   const lines = [];
   if (band) lines.push(`<div class="sub">Latest margin (<b>${latest.marginPct != null ? latest.marginPct + 'pp' : num(latest.margin) + ' votes'}</b>)
     puts this seat in the <b style="color:${band.color}">${band.label}</b> band
-    <span style="color:var(--muted)">(&lt;2pp knife-edge · 2–8pp competitive · 8–15pp leaning · &gt;15pp stronghold — our formula, not a forecast)</span>.</div>`);
+    <span class="muted">(&lt;2pp knife-edge · 2–8pp competitive · 8–15pp leaning · &gt;15pp stronghold — our formula, not a forecast)</span>.</div>`);
   const withPct = history.filter(r => r.marginPct != null).slice(0, 3);
   if (withPct.length >= 2) {
     const trend = withPct[0].marginPct - withPct[withPct.length - 1].marginPct;
@@ -2909,11 +2956,11 @@ function showWarRoom(seatId) {
   setView(`
     <h2><i class="dot" style="display:inline-block;background:${TYPE_COLOR('constituency')};width:12px;height:12px;border-radius:4px"></i>
         ${esc(node.name)} <span style="font-size:15px;font-weight:500;color:var(--muted)">war room</span></h2>
-    <div class="sub" style="margin-bottom:16px">${isAssembly ? 'Assembly constituency' : 'Lok Sabha constituency'}
-      ${state ? ` · <a href="#/node/${encodeURIComponent(state.id)}" style="color:var(--ink-2)">${esc(state.name)}</a>` : ''}
-      · <a href="#/node/${encodeURIComponent(node.id)}" style="color:var(--ink-2)">Seat profile</a>
-      ${mp ? ` · <a href="#/compare/${encodeURIComponent(mp.id)}" style="color:var(--accent);text-decoration:none">Compare with…</a>` : ''}
-      · <a href="${mailtoDossier(node.name)}" style="color:var(--accent);text-decoration:none">Request dossier</a></div>
+    <div class="sub mb-16">${isAssembly ? 'Assembly constituency' : 'Lok Sabha constituency'}
+      ${state ? ` · <a href="#/node/${encodeURIComponent(state.id)}" class="ink2-text">${esc(state.name)}</a>` : ''}
+      · <a href="#/node/${encodeURIComponent(node.id)}" class="ink2-text">Seat profile</a>
+      ${mp ? ` · <a href="#/compare/${encodeURIComponent(mp.id)}" class="alink">Compare with…</a>` : ''}
+      · <a href="${mailtoDossier(node.name)}" class="alink">Request dossier</a></div>
 
     <div class="eyebrow">Current ${isAssembly ? 'MLA' : 'MP'}</div>
     ${repCard || '<div class="note">No current-term result on file for this seat.</div>'}
@@ -2935,7 +2982,7 @@ function showWarRoom(seatId) {
           <a href="#/node/${encodeURIComponent(n.id)}" style="color:var(--ink);font-weight:600;text-decoration:none;font-size:13.5px">${esc(n.name)}</a>
         </div>`).join('')}
     </div>
-    <div class="sub" style="margin-top:6px"><a href="#/news" style="color:var(--accent);text-decoration:none">All news →</a></div>` : ''}
+    <div class="sub mt-6"><a href="#/news" class="alink">All news →</a></div>` : ''}
 
     ${compareLinks.length ? `
     <div class="eyebrow">Compare this seat</div>
@@ -3012,9 +3059,9 @@ function showConstituency(node) {
   setView(`
     <h2><i class="dot" style="display:inline-block;background:${TYPE_COLOR('constituency')};width:12px;height:12px;border-radius:4px"></i>
         ${esc(node.name)}</h2>
-    <div class="sub">${seatLabel}${state ? ` · <a href="#/node/${encodeURIComponent(state.id)}" style="color:var(--ink-2)">${esc(state.name)}</a>` : ''}
-      · <a href="#/war/${encodeURIComponent(node.id)}" style="color:var(--accent);text-decoration:none;font-weight:600">Open war room →</a></div>
-    ${mp ? `<div class="sub"><b>${memberLabel}:</b> <a href="#/node/${encodeURIComponent(mp.id)}" style="color:var(--accent);text-decoration:none;font-weight:600">${esc(mp.name)}</a>
+    <div class="sub">${seatLabel}${state ? ` · <a href="#/node/${encodeURIComponent(state.id)}" class="ink2-text">${esc(state.name)}</a>` : ''}
+      · <a href="#/war/${encodeURIComponent(node.id)}" class="alink-b">Open war room →</a></div>
+    ${mp ? `<div class="sub"><b>${memberLabel}:</b> <a href="#/node/${encodeURIComponent(mp.id)}" class="alink-b">${esc(mp.name)}</a>
       ${currentParty(mp.id) ? `(${esc(currentParty(mp.id).name)})` : ''}</div>` : ''}
     <div class="prov">source: <a href="${esc(node.source)}" target="_blank" rel="noopener">${esc(node.source)}</a></div>
     ${card}`);
