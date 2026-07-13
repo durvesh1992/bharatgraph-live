@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://durvesh1992.github.io/bharatgraph-live/sitemap.xml
