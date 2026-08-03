@@ -516,7 +516,7 @@ const $ = id => document.getElementById(id);
 // anything -- prefers-color-scheme was the only signal before this). ----
 (function initTheme() {
   const saved = localStorage.getItem('bg_theme');
-  const theme = saved || 'light';
+  const theme = saved || 'dark';
   document.documentElement.setAttribute('data-theme', theme);
 })();
 function toggleTheme() {
@@ -3320,16 +3320,28 @@ function showWarRoomPicker() {
 //   - cases: declared criminal cases, capped linear (0->0, 4+->100)
 //   - first-term: binary, no re-election track record on this seat yet
 // Missing components are dropped from that MP's average (not zero-filled),
-// and the row is flagged "partial data" rather than silently understating risk.
+// and the row is flagged "partial data" rather than silently understating
+// risk. A score is only computed from >=3 of the 4 components -- averaging
+// just 1-2 components produces extreme values far more often by pure sample
+// size (found while verifying: MPs whose seat couldn't be resolved to a WON
+// edge at all -- a known gap in the shared seatHistory() seat-matching, not
+// something specific to this page -- were landing at a "Very high" 100 score
+// purely from cases+first-term with nothing to average it against, which
+// would have made this page's own top-of-list look untrustworthy).
 function vulnerabilityRows() {
   const mps = sittingMPs().map(p => {
     const c = constituencyOf(p.id);
-    const history = (c ? seatHistory(c) : []).filter(r => r.turnout != null && r.year != null)
-      .sort((a, b) => b.year - a.year);
-    const latest = history[0] || null;
-    const prev = history.find(r => r.year < (latest?.year || Infinity)) || null;
-    const marginPct = latest?.marginPct ?? null;
-    const turnoutShift = (latest && prev) ? Math.abs(latest.turnout - prev.turnout) : null;
+    const history = (c ? seatHistory(c) : []).filter(r => r.year != null).sort((a, b) => b.year - a.year);
+    // Margin: most recent row that actually HAS a margin, independent of
+    // turnout availability (they're unrelated fields on the same WON edge;
+    // conflating them via a shared filter was the actual bug found in
+    // testing -- silently dropped margin whenever turnout alone was absent).
+    const latestWithMargin = history.find(r => r.marginPct != null) || null;
+    const marginPct = latestWithMargin?.marginPct ?? null;
+    // Turnout shift needs two DIFFERENT elections on the same seat, both
+    // with turnout recorded, most recent pair available.
+    const withTurnout = history.filter(r => r.turnout != null);
+    const turnoutShift = withTurnout.length >= 2 ? Math.abs(withTurnout[0].turnout - withTurnout[1].turnout) : null;
     const cases = p.props.affidavit?.criminal_cases ?? null;
     const terms = p.props.sansad?.no_of_terms ?? null;
     return {
@@ -3357,12 +3369,16 @@ function vulnerabilityRows() {
     if (turnoutScores[i] != null) parts.push(turnoutScores[i]);
     if (r.cases != null) parts.push(Math.min(100, r.cases * 25));
     if (r.firstTerm != null) parts.push(r.firstTerm ? 100 : 0);
-    const score = parts.length ? Math.round(parts.reduce((a, b) => a + b, 0) / parts.length) : null;
+    // Require >=3 of 4 components -- averaging just 1-2 numbers swings to the
+    // extremes far more easily than averaging 4, which would make missing
+    // data (not real electoral risk) the thing driving the top of the list.
+    const score = parts.length >= 3 ? Math.round(parts.reduce((a, b) => a + b, 0) / parts.length) : null;
     const band = score == null ? null : score >= 75 ? { label: 'Very high', color: '#c0392b' }
       : score >= 50 ? { label: 'High', color: '#d17d3f' }
       : score >= 25 ? { label: 'Medium', color: '#c9a227' }
       : { label: 'Low', color: '#1baf7a' };
-    return { ...r, marginScore: marginScores[i], turnoutScore: turnoutScores[i], score, band, complete: parts.length === 4 };
+    return { ...r, marginScore: marginScores[i], turnoutScore: turnoutScores[i], score, band,
+             complete: parts.length === 4, insufficientData: parts.length < 3 };
   });
 }
 let vulnSortKey = 'score', vulnSortAsc = false;
@@ -3375,9 +3391,11 @@ function showVulnerabilityIndex() {
       (25% each) factors, percentile-ranked against the ${all.length} other sitting MPs in this Lok Sabha:
       2024 win margin (smaller = higher score), turnout shift on the same seat since 2019 (bigger swing,
       either direction = higher score), declared criminal cases (capped at 4+), and first-term status
-      (no re-election track record yet). Rows marked <span class="chip">partial</span> are missing one or more
-      inputs and averaged over what's available, not zero-filled. This ranks relative electoral exposure from
-      public data — it is not a prediction of any election outcome.</div>
+      (no re-election track record yet). Rows marked <span class="chip">partial</span> are missing one input and
+      averaged over the rest, not zero-filled. Rows needing fewer than 3 of the 4 inputs show
+      <span class="chip">insufficient data</span> instead of a score — averaging just 1-2 numbers swings to the
+      extremes too easily to call it a real composite. This ranks relative electoral exposure from public data —
+      it is not a prediction of any election outcome.</div>
     <div class="controls m-0-16">
       <select id="vstate"><option value="">All states</option>${[...new Set(all.map(r => r.state).filter(Boolean))].sort().map(s => `<option>${esc(s)}</option>`).join('')}</select>
       <select id="vparty"><option value="">All parties</option>${[...new Set(all.map(r => r.party).filter(Boolean))].sort().map(p => `<option>${esc(p)}</option>`).join('')}</select>
@@ -3396,7 +3414,7 @@ function showVulnerabilityIndex() {
     rows.sort((a, b) => sortCompare(a[vulnSortKey], b[vulnSortKey], vulnSortAsc));
     $('vcount').textContent = `${rows.length} shown`;
     $('vtbody').innerHTML = rows.map(r => `
-      <tr data-go="${esc(r.id)}"><td><b>${esc(r.name)}</b>${!r.complete ? ' <span class="chip">partial</span>' : ''}</td>
+      <tr data-go="${esc(r.id)}"><td><b>${esc(r.name)}</b>${r.insufficientData ? ' <span class="chip">insufficient data</span>' : (!r.complete ? ' <span class="chip">partial</span>' : '')}</td>
       <td>${esc(r.party)}</td><td>${esc(r.state)}</td>
       <td class="num">${r.marginPct != null ? r.marginPct + 'pp' : '—'}</td>
       <td class="num">${r.turnoutShift != null ? r.turnoutShift.toFixed(1) + 'pp' : '—'}</td>
